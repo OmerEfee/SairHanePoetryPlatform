@@ -1,0 +1,15 @@
+1. **React Native ile Mobil Uygulama Geliştirme**:
+  - React Native, JavaScript kullanarak hem Android hem de iOS platformlarında çalışacak çapraz platform mobil uygulamalar geliştirmeye olanak tanır. -
+  Kullanıcı arayüzleri, bileşenler ve fonksiyonel özellikler geliştirmek için React Native'in sunduğu zengin kütüphane ve araçlar kullanılır. 
+  
+  2. **IDE Olarak Visual Studio Code Kullanımı**: - **Visual Studio Code (VSCode)**, hafif, hızlı ve güçlü bir editör olup, React Native geliştirme için en yaygın tercihlerden biridir.
+  - VSCode, kapsamlı eklentileri ve özelleştirme seçenekleriyle verimli bir geliştirme deneyimi sunar. Özellikle JavaScript ve React Native geliştirme için mükemmel uyum sağlar.
+  
+  - VSCode’da React Native için özel eklentiler (örneğin, React Native Tools) ile uygulamanın hızlı bir şekilde simülatör üzerinde çalıştırılması sağlanabilir.
+3. **Veritabanı Olarak Firebase Kullanımı**: -
+  **Firebase**, Google tarafından sunulan ve mobil uygulamalar için oldukça güçlü bir platformdur. Hem veritabanı, hem kimlik doğrulama,
+hem de gerçek zamanlı veri senkronizasyonu gibi birçok özellik sunar. - **Firebase Realtime Database veya Firestore** gibi veritabanları,
+React Native ile kolayca entegre edilebilir ve uygulamanın gerçek zamanlı veri senkronizasyonu gereksinimlerini karşılar.
+- **Firebase Authentication** kullanarak kullanıcı kayıt ve giriş işlemleri güvenli bir şekilde yönetilebilir.
+- **Firebase Cloud Messaging** ile bildirim gönderme gibi özellikler de Firebase’in sunduğu ek hizmetler arasındadır.
+- Firebase'in **veritabanı** kullanımı basit API'ler sayesinde hızlı bir şekilde uygulanabilir ve uygulamanın çevrimdışı çalışma yetenekleri de Firebase’in sunduğu çözümlerle yönetilebilir.
