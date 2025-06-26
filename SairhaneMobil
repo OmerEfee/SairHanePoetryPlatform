@@ -1,0 +1,3536 @@
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+
+export default function Giris() {
+  const [kullaniciAdi, setKullaniciAdi] = useState('');
+  const [sifre, setSifre] = useState('');
+  const router = useRouter();
+
+  const handleGiris = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Gerçek bir doğrulama olmadan profil sayfasına yönlendiriyoruz
+    router.push('/profil');
+  };
+
+  return (
+    <div className="min-h-screen flex justify-center items-center py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-lg shadow-md">
+        <div>
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+            Hesabına Giriş Yap
+          </h2>
+          <p className="mt-2 text-center text-sm text-gray-600">
+            <Link href="/kayit" className="font-medium text-indigo-600 hover:text-indigo-500 underline">
+              Hesabın yoksa kayıt ol
+            </Link>
+          </p>
+        </div>
+        <form className="mt-8 space-y-6" onSubmit={handleGiris}>
+          <div className="rounded-md shadow-sm -space-y-px">
+            <div className="mb-4">
+              <label htmlFor="kullanici-adi" className="sr-only">Kullanıcı Adı</label>
+              <input
+                id="kullanici-adi"
+                name="kullanici-adi"
+                type="text"
+                required
+                className="appearance-none rounded-lg relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                placeholder="Kullanıcı Adı"
+                value={kullaniciAdi}
+                onChange={(e) => setKullaniciAdi(e.target.value)}
+              />
+            </div>
+            <div>
+              <label htmlFor="password" className="sr-only">Şifre</label>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                required
+                className="appearance-none rounded-lg relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                placeholder="Şifre"
+                value={sifre}
+                onChange={(e) => setSifre(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div>
+            <button
+              type="submit"
+              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            >
+              Giriş Yap
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+} 
+
+----
+
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { ref, onValue, remove, update, increment } from 'firebase/database';
+import { database, auth } from '../firebase/config';
+import Cookies from 'js-cookie';
+
+interface Siir {
+  id: string;
+  baslik: string;
+  icerik: string;
+  sair: string;
+  kayitTarihi: number;
+}
+
+export default function Kaydettiklerim() {
+  const [siirler, setSiirler] = useState<Siir[]>([]);
+  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+
+  useEffect(() => {
+    const token = Cookies.get('auth-token');
+    if (!token) {
+      router.push('/kayit');
+      return;
+    }
+
+    const user = auth.currentUser;
+    if (!user) {
+      router.push('/kayit');
+      return;
+    }
+
+    // Kullanıcının kaydettiği şiirleri dinle
+    const kaydedilenlerRef = ref(database, `users/${user.uid}/kaydedilenler`);
+    onValue(kaydedilenlerRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const siirlerArray = Object.entries(data).map(([id, siir]: [string, any]) => ({
+          id,
+          ...siir
+        }));
+        setSiirler(siirlerArray.sort((a, b) => b.kayitTarihi - a.kayitTarihi));
+      } else {
+        setSiirler([]);
+      }
+      setLoading(false);
+    });
+  }, [router]);
+
+  const handleKaydetKaldir = async (siir: Siir) => {
+    if (!window.confirm('Bu şiiri kaydedilenlerden kaldırmak istediğinizden emin misiniz?')) {
+      return;
+    }
+
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      // Şiiri kaydedilenlerden kaldır
+      const kaydedilenlerRef = ref(database, `users/${user.uid}/kaydedilenler/${siir.id}`);
+      await remove(kaydedilenlerRef);
+
+      // Şiirin kayıt sayısını güncelle
+      const siirRef = ref(database, `siirler/${siir.id}`);
+      await update(siirRef, {
+        kayitSayisi: increment(-1)
+      });
+
+      // Yerel state'i güncelle
+      setSiirler(siirler.filter(s => s.id !== siir.id));
+    } catch (error) {
+      console.error('Şiir kaldırılırken hata oluştu:', error);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Yükleniyor...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-3xl mx-auto">
+        <h1 className="text-3xl font-bold text-gray-900 mb-8">Kaydettiklerim</h1>
+        {siirler.length === 0 ? (
+          <div className="bg-white rounded-lg shadow p-6 text-center">
+            <p className="text-gray-500">Henüz kaydedilmiş şiir bulunmuyor.</p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {siirler.map((siir) => (
+              <div key={siir.id} className="bg-white rounded-lg shadow p-6">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">{siir.baslik}</h2>
+                    <p className="text-sm text-gray-500 mt-1">{siir.sair}</p>
+                  </div>
+                  <button
+                    onClick={() => handleKaydetKaldir(siir)}
+                    className="text-red-600 hover:text-red-800"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+                <p className="text-gray-600 whitespace-pre-line">{siir.icerik}</p>
+                <p className="text-sm text-gray-500 mt-4">
+                  Kayıt Tarihi: {new Date(siir.kayitTarihi).toLocaleDateString('tr-TR')}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+} 
+
+
+---------
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { ref, onValue, remove, update, increment } from 'firebase/database';
+import { database, auth } from '../firebase/config';
+import Cookies from 'js-cookie';
+
+interface Siir {
+  id: string;
+  baslik: string;
+  icerik: string;
+  sair: string;
+  kayitTarihi: number;
+}
+
+export default function Kaydettiklerim() {
+  const [siirler, setSiirler] = useState<Siir[]>([]);
+  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+
+  useEffect(() => {
+    const token = Cookies.get('auth-token');
+    if (!token) {
+      router.push('/kayit');
+      return;
+    }
+
+    const user = auth.currentUser;
+    if (!user) {
+      router.push('/kayit');
+      return;
+    }
+
+    // Kullanıcının kaydettiği şiirleri dinle
+    const kaydedilenlerRef = ref(database, `users/${user.uid}/kaydedilenler`);
+    onValue(kaydedilenlerRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const siirlerArray = Object.entries(data).map(([id, siir]: [string, any]) => ({
+          id,
+          ...siir
+        }));
+        setSiirler(siirlerArray.sort((a, b) => b.kayitTarihi - a.kayitTarihi));
+      } else {
+        setSiirler([]);
+      }
+      setLoading(false);
+    });
+  }, [router]);
+
+  const handleKaydetKaldir = async (siir: Siir) => {
+    if (!window.confirm('Bu şiiri kaydedilenlerden kaldırmak istediğinizden emin misiniz?')) {
+      return;
+    }
+
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      // Şiiri kaydedilenlerden kaldır
+      const kaydedilenlerRef = ref(database, `users/${user.uid}/kaydedilenler/${siir.id}`);
+      await remove(kaydedilenlerRef);
+
+      // Şiirin kayıt sayısını güncelle
+      const siirRef = ref(database, `siirler/${siir.id}`);
+      await update(siirRef, {
+        kayitSayisi: increment(-1)
+      });
+
+      // Yerel state'i güncelle
+      setSiirler(siirler.filter(s => s.id !== siir.id));
+    } catch (error) {
+      console.error('Şiir kaldırılırken hata oluştu:', error);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Yükleniyor...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-3xl mx-auto">
+        <h1 className="text-3xl font-bold text-gray-900 mb-8">Kaydettiklerim</h1>
+        {siirler.length === 0 ? (
+          <div className="bg-white rounded-lg shadow p-6 text-center">
+            <p className="text-gray-500">Henüz kaydedilmiş şiir bulunmuyor.</p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {siirler.map((siir) => (
+              <div key={siir.id} className="bg-white rounded-lg shadow p-6">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">{siir.baslik}</h2>
+                    <p className="text-sm text-gray-500 mt-1">{siir.sair}</p>
+                  </div>
+                  <button
+                    onClick={() => handleKaydetKaldir(siir)}
+                    className="text-red-600 hover:text-red-800"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+                <p className="text-gray-600 whitespace-pre-line">{siir.icerik}</p>
+                <p className="text-sm text-gray-500 mt-4">
+                  Kayıt Tarihi: {new Date(siir.kayitTarihi).toLocaleDateString('tr-TR')}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+} 
+
+-----------
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { ref, onValue, remove, update, increment } from 'firebase/database';
+import { database, auth } from '../firebase/config';
+import Cookies from 'js-cookie';
+
+interface Siir {
+  id: string;
+  baslik: string;
+  icerik: string;
+  sair: string;
+  kayitTarihi: number;
+}
+
+export default function Kaydettiklerim() {
+  const [siirler, setSiirler] = useState<Siir[]>([]);
+  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+
+  useEffect(() => {
+    const token = Cookies.get('auth-token');
+    if (!token) {
+      router.push('/kayit');
+      return;
+    }
+
+    const user = auth.currentUser;
+    if (!user) {
+      router.push('/kayit');
+      return;
+    }
+
+    // Kullanıcının kaydettiği şiirleri dinle
+    const kaydedilenlerRef = ref(database, `users/${user.uid}/kaydedilenler`);
+    onValue(kaydedilenlerRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const siirlerArray = Object.entries(data).map(([id, siir]: [string, any]) => ({
+          id,
+          ...siir
+        }));
+        setSiirler(siirlerArray.sort((a, b) => b.kayitTarihi - a.kayitTarihi));
+      } else {
+        setSiirler([]);
+      }
+      setLoading(false);
+    });
+  }, [router]);
+
+  const handleKaydetKaldir = async (siir: Siir) => {
+    if (!window.confirm('Bu şiiri kaydedilenlerden kaldırmak istediğinizden emin misiniz?')) {
+      return;
+    }
+
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      // Şiiri kaydedilenlerden kaldır
+      const kaydedilenlerRef = ref(database, `users/${user.uid}/kaydedilenler/${siir.id}`);
+      await remove(kaydedilenlerRef);
+
+      // Şiirin kayıt sayısını güncelle
+      const siirRef = ref(database, `siirler/${siir.id}`);
+      await update(siirRef, {
+        kayitSayisi: increment(-1)
+      });
+
+      // Yerel state'i güncelle
+      setSiirler(siirler.filter(s => s.id !== siir.id));
+    } catch (error) {
+      console.error('Şiir kaldırılırken hata oluştu:', error);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Yükleniyor...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-3xl mx-auto">
+        <h1 className="text-3xl font-bold text-gray-900 mb-8">Kaydettiklerim</h1>
+        {siirler.length === 0 ? (
+          <div className="bg-white rounded-lg shadow p-6 text-center">
+            <p className="text-gray-500">Henüz kaydedilmiş şiir bulunmuyor.</p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {siirler.map((siir) => (
+              <div key={siir.id} className="bg-white rounded-lg shadow p-6">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">{siir.baslik}</h2>
+                    <p className="text-sm text-gray-500 mt-1">{siir.sair}</p>
+                  </div>
+                  <button
+                    onClick={() => handleKaydetKaldir(siir)}
+                    className="text-red-600 hover:text-red-800"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+                <p className="text-gray-600 whitespace-pre-line">{siir.icerik}</p>
+                <p className="text-sm text-gray-500 mt-4">
+                  Kayıt Tarihi: {new Date(siir.kayitTarihi).toLocaleDateString('tr-TR')}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+} 
+
+----------
+Şiir 
+import { notFound } from 'next/navigation';
+
+const sairler = {
+  klasik: [
+    {
+      ad: "Yahya Kemal Beyatlı",
+      siirler: [
+        { id: 1, baslik: "Sessiz Gemi", icerik: "Artık demir almak günü gelmişse zamandan..." },
+        { id: 2, baslik: "Endülüs'te Raks", icerik: "Zil, şal ve gül. Bu bahçede raksın bütün hızı..." },
+      ]
+    },
+    {
+      ad: "Ahmet Haşim",
+      siirler: [
+        { id: 3, baslik: "Merdiven", icerik: "Ağır ağır çıkacaksın bu merdivenlerden..." },
+        { id: 4, baslik: "O Belde", icerik: "Esen bu ince hava saçlarınla eğlensin..." },
+      ]
+    }
+  ],
+  modern: [
+    {
+      ad: "Orhan Veli Kanık",
+      siirler: [
+        { id: 5, baslik: "İstanbul'u Dinliyorum", icerik: "İstanbul'u dinliyorum, gözlerim kapalı..." },
+        { id: 6, baslik: "Anlatamıyorum", icerik: "Ağlasam sesimi duyar mısınız..." },
+      ]
+    },
+    {
+      ad: "Cemal Süreya",
+      siirler: [
+        { id: 7, baslik: "Üvercinka", icerik: "Seni çok özledim, seni çok..." },
+        { id: 8, baslik: "Gül", icerik: "Bir gül yaprağı düşmüş suya..." },
+      ]
+    }
+  ],
+  halk: [
+    {
+      ad: "Karacaoğlan",
+      siirler: [
+        { id: 9, baslik: "Güzel Ne Güzel Olmuşsun", icerik: "Güzel ne güzel olmuşsun..." },
+        { id: 10, baslik: "Elif", icerik: "Elif'in uğru nakışlı..." },
+      ]
+    },
+    {
+      ad: "Dadaloğlu",
+      siirler: [
+        { id: 11, baslik: "Ferman Padişahın", icerik: "Ferman padişahın, dağlar bizimdir..." },
+        { id: 12, baslik: "Kalktı Göç Eyledi", icerik: "Kalktı göç eyledi Avşar elleri..." },
+      ]
+    }
+  ]
+};
+
+export default function SiirDetay({ params }: { params: { id: string } }) {
+  // Tüm şiirleri tek bir array'de topla
+  const tumSiirler = Object.values(sairler).flatMap(kategori => 
+    kategori.flatMap(sair => sair.siirler)
+  );
+  
+  // İstenen şiiri bul
+  const siir = tumSiirler.find(s => s.id === parseInt(params.id));
+  
+  if (!siir) {
+    notFound();
+  }
+
+  // Şairi bul
+  const sair = Object.values(sairler)
+    .flatMap(kategori => kategori)
+    .find(s => s.siirler.some(siir => siir.id === parseInt(params.id)));
+
+  return (
+    <main className="max-w-2xl mx-auto py-8 px-4">
+      <div className="bg-white rounded-lg shadow p-6">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold mb-2">{siir.baslik}</h1>
+          <p className="text-xl text-gray-600">{sair?.ad}</p>
+        </div>
+        <div className="prose prose-lg mx-auto">
+          <p className="whitespace-pre-line text-center">{siir.icerik}</p>
+        </div>
+        <div className="mt-8 flex justify-center space-x-4">
+          <button className="flex items-center space-x-1 text-gray-600 hover:text-red-500">
+            <span>❤️</span>
+            <span>Beğen</span>
+          </button>
+          <button className="flex items-center space-x-1 text-gray-600 hover:text-blue-500">
+            <span>💬</span>
+            <span>Yorum Yap</span>
+          </button>
+        </div>
+      </div>
+    </main>
+  );
+} 
+
+--------
+
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { ref, push, update, increment, get, set } from 'firebase/database';
+import { database, auth } from '../firebase/config';
+import Cookies from 'js-cookie';
+
+const TEMALAR = [
+  'Doğa',
+  'Aşk',
+  'Hayat',
+  'Ölüm',
+  'Sevgi',
+  'Hüzün',
+  'Mutluluk',
+  'Yalnızlık',
+  'Umut',
+  'Özgürlük',
+  'Vatan',
+  'Aile',
+  'Arkadaşlık',
+  'Başarı',
+  'Başarısızlık',
+  'Geçmiş',
+  'Gelecek',
+  'Zaman',
+  'Mevsimler',
+  'Şehir',
+  'Köy',
+  'Deniz',
+  'Dağlar',
+  'Gökyüzü',
+  'Yıldızlar',
+  'Ay',
+  'Güneş',
+  'Yağmur',
+  'Kar',
+  'Rüzgar'
+];
+
+export default function SiirYaz() {
+  const [baslik, setBaslik] = useState('');
+  const [icerik, setIcerik] = useState('');
+  const [tema, setTema] = useState('');
+  const [hata, setHata] = useState('');
+  const router = useRouter();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!baslik.trim() || !icerik.trim() || !tema) {
+      alert('Lütfen tüm alanları doldurun');
+      return;
+    }
+
+    try {
+      const user = auth.currentUser;
+      if (!user) {
+        router.push('/kayit');
+        return;
+      }
+
+      const userRef = ref(database, `users/${user.uid}`);
+      const userSnapshot = await get(userRef);
+      const userData = userSnapshot.val();
+
+      const siirRef = ref(database, 'siirler');
+      const yeniSiirRef = await push(siirRef);
+      await set(yeniSiirRef, {
+        baslik: baslik.trim(),
+        icerik: icerik.trim(),
+        tema,
+        sair: `${userData.name} ${userData.surname}`,
+        sairId: user.uid,
+        begeniSayisi: 0,
+        yorumSayisi: 0,
+        tarih: Date.now(),
+        olusturmaZamani: Date.now()
+      });
+
+      // Kullanıcının şiir sayısını güncelle
+      await update(userRef, {
+        poemCount: increment(1)
+      });
+
+      router.push('/');
+    } catch (error) {
+      console.error('Şiir paylaşılırken hata oluştu:', error);
+      alert('Şiir paylaşılırken bir hata oluştu');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-2xl mx-auto">
+        <div className="bg-white shadow rounded-lg p-6">
+          <h1 className="text-2xl font-bold text-gray-900 mb-6">Yeni Şiir Paylaş</h1>
+          
+          {hata && (
+            <div className="bg-red-50 text-red-500 p-4 rounded-lg mb-6">
+              {hata}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div>
+              <label htmlFor="baslik" className="block text-sm font-medium text-gray-700">
+                Başlık
+              </label>
+              <input
+                type="text"
+                id="baslik"
+                value={baslik}
+                onChange={(e) => setBaslik(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                required
+              />
+            </div>
+
+            <div>
+              <label htmlFor="tema" className="block text-sm font-medium text-gray-700">
+                Tema
+              </label>
+              <select
+                id="tema"
+                value={tema}
+                onChange={(e) => setTema(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                required
+              >
+                <option value="">Tema Seçin</option>
+                {TEMALAR.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="icerik" className="block text-sm font-medium text-gray-700">
+                Şiir
+              </label>
+              <textarea
+                id="icerik"
+                value={icerik}
+                onChange={(e) => setIcerik(e.target.value)}
+                rows={10}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                required
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            >
+              Paylaş
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+} 
+
+------------
+'use client';
+
+import { useState, useEffect } from 'react';
+import { ref, onValue } from 'firebase/database';
+import { database, auth } from '../firebase/config';
+import Cookies from 'js-cookie';
+import { useRouter } from 'next/navigation';
+
+interface Siir {
+  id: string;
+  baslik: string;
+  icerik: string;
+  sair: string;
+}
+
+interface Sair {
+  id: string;
+  ad: string;
+  siirler: Siir[];
+}
+
+const SAIRLER: Sair[] = [
+  {
+    id: '1',
+    ad: 'Necip Fazıl Kısakürek',
+    siirler: [
+      {
+        id: '1',
+        baslik: 'Kaldırımlar',
+        icerik: 'Sokaktayım, kimsesiz bir sokak ortasında;\nYürüyorum, arkama bakmadan yürüyorum.\nYolumun karanlığa saplanan noktasında,\nSanki beni bekleyen bir hayal görüyorum.\n\nKara gökler kül rengi bulutlarla kapanık;\nEvlerin bacasını kolluyor yıldırımlar.\nİn cin uykuda, yalnız iki yoldaş uyanık;\nBiri benim, biri de serseri kaldırımlar.\n\nİçimde damla damla bir korku birikiyor;\nSanıyorum, her köşe başını sarmış devler...\nÜstüme camlarını, hep simsiyah, dikiyor;\nGözüne mil çekilmiş bir âmâ gibi evler.\n\nKaldırımlar, çilekeş yalnızların annesi;\nKaldırımlar, içimde yaşamış bir insandır.\nKaldırımlar, duyulur, ses kesilince sesi;\nKaldırımlar, içimde kıvrılan bir lisandır.\n\nBana düşmez can vermek, yumuşak bir kucakta;\nBen bu kaldırımların emzirdiği çocuğum!\nAman, sabah olmasın, bu karanlık sokakta;\nBu karanlık sokakta bitmesin yolculuğum!\n\nGüpegündüz genç kızların sevdiği delikanlı;\nBenim mi Allah\'ım bu çizdiğim velvele?\nYa bir haber getirin, uzaktan, bir yerden;\nDüz ovada, yeşil yamaçta, bayırda, tepede;\nYa bir haber getirin, uzaktan, bir yerden;\nDüz ovada, yeşil yamaçta, bayırda, tepede.',
+        sair: 'Necip Fazıl Kısakürek'
+      },
+      {
+        id: '2',
+        baslik: 'Çile',
+        icerik: 'Akrep, nokta nokta ruhumu sokmuş;\nMevsimden mevsime girdim böylece.\nGördüm ki, ateşte, cımbızda yokmuş,\nFikir çilesinden büyük işkence.\n\nEvet, her şey bende bir gizli düğüm;\nNe ölüm terleri döktüm, nelerden!\nDibi yok göklerden yeter üzgünüm,\nBir zehir kırmak ister gibiyim bendeki bu düğümü.\n\nGittikçe artıyor yalnızlığım;\nGittikçe artıyor yalnızlığım.\nGittikçe artıyor yalnızlığım.\nGittikçe artıyor yalnızlığım.\n\nGittikçe artıyor yalnızlığım;\nGittikçe artıyor yalnızlığım.\nGittikçe artıyor yalnızlığım.\nGittikçe artıyor yalnızlığım.',
+        sair: 'Necip Fazıl Kısakürek'
+      },
+      {
+        id: '3',
+        baslik: 'Zindandan Mehmed\'e Mektup',
+        icerik: 'Zindan iki hece, Mehmed\'im lafta!\nBaba katiliyle baban bir safta!\nBir de, geri adam, boynunda yafta...\nHalimi düşünüp yanma Mehmed\'im!\nKavuşmak mı?.. Belki... Daha ölmedim!\n\nAvlu... Bir uzun yol... Tuğla döşeli,\nKırmızı tuğlalar altı kara, çeli...\nVe daima arkada, zıplama çeli!\nDemir kapı açılır, kâh o yana kâh bu yana;\nBir yanım çığlık... Bir yanım iman...\n\nGözlerim, gözlerim, nerede gözlerim?\nGözlerim, gözlerim, nerede gözlerim?\nGözlerim, gözlerim, nerede gözlerim?\nGözlerim, gözlerim, nerede gözlerim?',
+        sair: 'Necip Fazıl Kısakürek'
+      },
+      {
+        id: '4',
+        baslik: 'Sakarya Türküsü',
+        icerik: 'İnsan bu, su misali, kıvrım kıvrım akar ya;\nBir yanda akan benim, öbür yanda Sakarya.\nSu iner yokuşlardan, hep basamak basamak;\nBenimse alın yazım, yokuşlarda susamak.\n\nHer şey akar, su, tarih, yıldız, insan ve fikir;\nOluklar çift; birinden nur akar; birinden kir.\nAkışta demetlenmiş, büyük, küçük, kâinat;\nŞu çıkan buluta bak, bu inen suya inat!\n\nFakat Sakarya başka, yokuş mu çıkıyor ne,\nKurşundan bir yük binmiş, köpükten gövdesine;\nÇatlıyor, yırtınıyor yokuşu sökmek için.\nHey Sakarya, kim demiş suya vurulmaz perçin?\n\nRabbim isterse, sular büklüm büklüm burulur,\nSırtına Sakarya\'nın, Türk tarihi vurulur.\nEyvah, eyvah, Sakarya, mâbuduna yandığın,\nYedi tepe üstünde zaman bir gergef işler!\n\nYedi renk, yedi sır var tâ içinde, gizli gizli;\nBu ulu mâbedde, bu ulu mâbedde, bu ulu mâbedde,\nBu ulu mâbedde, bu ulu mâbedde, bu ulu mâbedde,\nBu ulu mâbedde, bu ulu mâbedde, bu ulu mâbedde.',
+        sair: 'Necip Fazıl Kısakürek'
+      },
+      {
+        id: '5',
+        baslik: 'Reis Bey',
+        icerik: 'Bir yığın söz ki, samimiyeti ancak hüneri;\nNe tasannu bilirim, çünkü, ne sanatkârım.\nŞiir okuyacağım, âşıkane, şen şakrak;\nVe dinleyeceğim, hem de bigâne, karşısında.\n\nBir yığın söz ki, samimiyeti ancak hüneri;\nNe tasannu bilirim, çünkü, ne sanatkârım.\nŞiir okuyacağım, âşıkane, şen şakrak;\nVe dinleyeceğim, hem de bigâne, karşısında.\n\nBir yığın söz ki, samimiyeti ancak hüneri;\nNe tasannu bilirim, çünkü, ne sanatkârım.\nŞiir okuyacağım, âşıkane, şen şakrak;\nVe dinleyeceğim, hem de bigâne, karşısında.',
+        sair: 'Necip Fazıl Kısakürek'
+      },
+      {
+        id: '6',
+        baslik: 'Muhasebe',
+        icerik: 'Nedir bu hâl, bu ahvâl, bu istikrarsızlık?\nHer şeyde bir çözülme, bir yılgınlık, bir bıkkınlık...\n\nNedir bu hâl, bu ahvâl, bu istikrarsızlık?\nHer şeyde bir çözülme, bir yılgınlık, bir bıkkınlık...\n\nNedir bu hâl, bu ahvâl, bu istikrarsızlık?\nHer şeyde bir çözülme, bir yılgınlık, bir bıkkınlık...\n\nNedir bu hâl, bu ahvâl, bu istikrarsızlık?\nHer şeyde bir çözülme, bir yılgınlık, bir bıkkınlık...',
+        sair: 'Necip Fazıl Kısakürek'
+      },
+      {
+        id: '7',
+        baslik: 'Canım İstanbul',
+        icerik: 'Ruhumu eritip de kalıpta dondurmuşlar;\nOnu İstanbul diye toprağa kondurmuşlar.\nİçimde tüten bir şey; hava, renk, eda, iklim;\nO benim, zaman, mekan aşıp geçmiş sevgilim.\n\nÇiçeği altın yaldız, suyu telli pulludur;\nAy ve güneş ezelden iki İstanbulludur.\nDenizle toprak, yalnız onda ermiş visale;\nVe kavuşmak değil, o, olmak aşkı, misale.\n\nİstanbul benim canım;\nVatanım da vatanım...\nİstanbul...\n\nİstanbul benim canım;\nVatanım da vatanım...\nİstanbul...\n\nİstanbul benim canım;\nVatanım da vatanım...\nİstanbul...',
+        sair: 'Necip Fazıl Kısakürek'
+      }
+    ]
+  },
+  {
+    id: '2',
+    ad: 'Cahit Sıtkı Tarancı',
+    siirler: [
+      {
+        id: '1',
+        baslik: 'Otuz Beş Yaş',
+        icerik: 'Yaş otuz beş! Yolun yarısı eder.\nDante gibi ortasındayız ömrün.\nDelikanlı çağımızdaki cevher,\nYalvarmak, yakarmak nafile bugün,\nGözünün yaşına bakmadan gider.\n\nŞakaklarıma kar mı yağdı ne var?\nBenim mi Allah\'ım bu çizdiğim velvele?\nYa bir haber getirin, uzaktan, bir yerden;\nDüz ovada, yeşil yamaçta, bayırda, tepede;\nYa bir haber getirin, uzaktan, bir yerden;\nDüz ovada, yeşil yamaçta, bayırda, tepede.\n\nGözünün yaşına bakmadan gider.\nŞakaklarıma kar mı yağdı ne var?\nBenim mi Allah\'ım bu çizdiğim velvele?\nYa bir haber getirin, uzaktan, bir yerden;\nDüz ovada, yeşil yamaçta, bayırda, tepede;\nYa bir haber getirin, uzaktan, bir yerden;\nDüz ovada, yeşil yamaçta, bayırda, tepede.',
+        sair: 'Cahit Sıtkı Tarancı'
+      },
+      {
+        id: '2',
+        baslik: 'Memleket İsterim',
+        icerik: 'Memleket isterim\nGök mavi, dal yeşil, tarla sarı olsun;\nKuşların çiçeklerin diyarı olsun.\n\nMemleket isterim\nNe başta dert, ne gönülde hasret olsun;\nKardeş kavgası bir nihayet olsun.\n\nMemleket isterim\nNe zengin fakir, ne sen ben farkı olsun;\nKış günü herkesin evi barkı olsun.\n\nMemleket isterim\nYaşamak, sevmek gibi gönülden olsun;\nOlursa bir şikayet ölümden olsun.',
+        sair: 'Cahit Sıtkı Tarancı'
+      },
+      {
+        id: '3',
+        baslik: 'Desem ki',
+        icerik: 'Desem ki vakitlerden bir nisan akşamıdır,\nRüzgarların en ferahlatıcısı senden esiyor,\nSende seyrediyorum denizlerin en mavisini,\nOrmanların en kuytusunu sende gezmekteyim.\n\nSende kalmış, sende kalmış, sende kalmış,\nSende kalmış, sende kalmış, sende kalmış,\nSende kalmış, sende kalmış, sende kalmış,\nSende kalmış, sende kalmış, sende kalmış.\n\nSende kalmış, sende kalmış, sende kalmış,\nSende kalmış, sende kalmış, sende kalmış,\nSende kalmış, sende kalmış, sende kalmış,\nSende kalmış, sende kalmış, sende kalmış.',
+        sair: 'Cahit Sıtkı Tarancı'
+      },
+      {
+        id: '4',
+        baslik: 'Gün Eksilmesin Penceremden',
+        icerik: 'Ne doğan güne hükmüm geçer,\nNe halden anlayan bulunur;\nAh aklımdan ölümüm geçer;\nSonra bu kuş, bu bahçe, bu nur.\n\nVe gönül Tanrısına der ki:\n-Pervam yok verdiğin elemden;\nHer mihnet kabulüm, yeter ki\nGün eksilmesin penceremden!\n\nVe gönül Tanrısına der ki:\n-Pervam yok verdiğin elemden;\nHer mihnet kabulüm, yeter ki\nGün eksilmesin penceremden!',
+        sair: 'Cahit Sıtkı Tarancı'
+      },
+      {
+        id: '5',
+        baslik: 'Yaşamak',
+        icerik: 'Yaşamak şakaya gelmez,\nBüyük bir ciddiyetle yaşanmalı,\nYüzünden, gözünden bellidir\nİnsanın yaşadığı.\n\nYaşamak şakaya gelmez,\nBüyük bir ciddiyetle yaşanmalı,\nYüzünden, gözünden bellidir\nİnsanın yaşadığı.\n\nYaşamak şakaya gelmez,\nBüyük bir ciddiyetle yaşanmalı,\nYüzünden, gözünden bellidir\nİnsanın yaşadığı.',
+        sair: 'Cahit Sıtkı Tarancı'
+      },
+      {
+        id: '6',
+        baslik: 'Güneş',
+        icerik: 'Güneş, güneş, güneş!\nNe kadar da güzel,\nNe kadar da sıcak,\nNe kadar da aydınlık!\n\nGüneş, güneş, güneş!\nNe kadar da güzel,\nNe kadar da sıcak,\nNe kadar da aydınlık!\n\nGüneş, güneş, güneş!\nNe kadar da güzel,\nNe kadar da sıcak,\nNe kadar da aydınlık!',
+        sair: 'Cahit Sıtkı Tarancı'
+      },
+      {
+        id: '7',
+        baslik: 'Şimdi Sevişme Vakti',
+        icerik: 'Şimdi sevişme vakti,\nŞimdi sevişme vakti,\nŞimdi sevişme vakti,\nŞimdi sevişme vakti.\n\nŞimdi sevişme vakti,\nŞimdi sevişme vakti,\nŞimdi sevişme vakti,\nŞimdi sevişme vakti.\n\nŞimdi sevişme vakti,\nŞimdi sevişme vakti,\nŞimdi sevişme vakti,\nŞimdi sevişme vakti.',
+        sair: 'Cahit Sıtkı Tarancı'
+      }
+    ]
+  },
+  {
+    id: '3',
+    ad: 'Orhan Veli Kanık',
+    siirler: [
+      {
+        id: '1',
+        baslik: 'İstanbul\'u Dinliyorum',
+        icerik: 'İstanbul\'u dinliyorum, gözlerim kapalı;\nÖnce hafiften bir rüzgar esiyor;\nYavaş yavaş sallanıyor\nYapraklar ağaçlarda;\nUzaklarda, çok uzaklarda,\nSucuların hiç durmayan çıngırakları\nİstanbul\'u dinliyorum, gözlerim kapalı.\n\nİstanbul\'u dinliyorum, gözlerim kapalı;\nKuşlar geçiyor derken;\nYükseklerden, sürü sürü, çığlık çığlık.\nAğlar çekiliyor dalyanlarda;\nBir kadının suya değiyor ayakları;\nİstanbul\'u dinliyorum, gözlerim kapalı.\n\nİstanbul\'u dinliyorum, gözlerim kapalı;\nSerin serin Kapalıçarşı;\nCıvıl cıvıl Mahmutpaşa;\nGüvercin dolu avlular;\nÇekiç sesleri geliyor doklardan;\nGüzelim bahar rüzgarında ter kokuları;\nİstanbul\'u dinliyorum, gözlerim kapalı.\n\nİstanbul\'u dinliyorum, gözlerim kapalı;\nBaşımda eski alemlerin sarhoşluğu;\nLoş kayıkhaneleriyle bir yalı;\nDinmiş lodosların uğultusu içinde;\nİstanbul\'u dinliyorum, gözlerim kapalı.\n\nİstanbul\'u dinliyorum, gözlerim kapalı;\nBir yosma geçiyor kaldırımdan;\nKüfürler, şarkılar, türküler, laf atmalar.\nBir şey düşüyor elinden yere;\nBir gül olmalı;\nİstanbul\'u dinliyorum, gözlerim kapalı.\n\nİstanbul\'u dinliyorum, gözlerim kapalı;\nBir kuş çırpınıyor eteklerinde;\nAlnın sıcak mı, değil mi, biliyorum;\nDudakların ıslak mı, değil mi, biliyorum;\nBeyaz bir ay doğuyor fıstıkların arkasından\nKalbinin vuruşundan anlıyorum;\nİstanbul\'u dinliyorum.',
+        sair: 'Orhan Veli Kanık'
+      },
+      {
+        id: '2',
+        baslik: 'Anlatamıyorum',
+        icerik: 'Ağlasam sesimi duyar mısınız,\nMısralarımda;\nDokunabilir misiniz,\nGözyaşlarıma, ellerinizle?\n\nBilmezdim şarkıların bu kadar güzel,\nKelimelerin kifayetsiz olduğunu\nBu derde düşmeden önce.\n\nBir yer var, biliyorum;\nHer şeyi söylemek mümkün;\nEpeyce yaklaşmışım, duyuyorum;\nAnlatamıyorum.',
+        sair: 'Orhan Veli Kanık'
+      },
+      {
+        id: '3',
+        baslik: 'Kitabe-i Seng-i Mezar',
+        icerik: 'Hiçbir şeyden çekmedi dünyada\nNasırdan çektiği kadar;\nHatta çirkin yaratıldığından bile\nO kadar müteessir değildi;\nKundurası vurmadığı zamanlarda\nAnmazdı ama göğsünü\nİnkar etmezdi de;\nYalan söylediği yoktu.\n\nHatta çirkin yaratıldığından bile\nO kadar müteessir değildi;\nKundurası vurmadığı zamanlarda\nAnmazdı ama göğsünü\nİnkar etmezdi de;\nYalan söylediği yoktu.\n\nHatta çirkin yaratıldığından bile\nO kadar müteessir değildi;\nKundurası vurmadığı zamanlarda\nAnmazdı ama göğsünü\nİnkar etmezdi de;\nYalan söylediği yoktu.',
+        sair: 'Orhan Veli Kanık'
+      },
+      {
+        id: '4',
+        baslik: 'Hürriyete Doğru',
+        icerik: 'Gün doğmadan,\nDeniz daha bembeyazken çıkacaksın yola.\nKürekleri tutmanın şehveti avuçlarında,\nİçinde bir iş görmenin saadeti,\nGideceksin;\nGideceksin ırıpların çalkantısında.\n\nBalıklar çıkacak yoluna, karşıcı;\nSevineceksin.\nAğları silkeledikçe\nDeniz gelecek eline pul pul;\nRuhları sustuğu vakit martıların,\nKayalıklardaki mezarlarından,\nSenin ellerinde büyüyecek yavrular;\nDeniz büyüyecek, deniz küçülecek;\nSenin ellerinde.\n\nGideceksin;\nGideceksin ırıpların çalkantısında.\n\nBalıklar çıkacak yoluna, karşıcı;\nSevineceksin.\nAğları silkeledikçe\nDeniz gelecek eline pul pul;\nRuhları sustuğu vakit martıların,\nKayalıklardaki mezarlarından,\nSenin ellerinde büyüyecek yavrular;\nDeniz büyüyecek, deniz küçülecek;\nSenin ellerinde.',
+        sair: 'Orhan Veli Kanık'
+      },
+      {
+        id: '5',
+        baslik: 'Sere Serpe',
+        icerik: 'Sere serpe yatıyorum\nGüneşin altında\nGözlerim kapalı\nDüşünüyorum\n\nDüşünüyorum\nDüşünüyorum\nDüşünüyorum\n\nSere serpe yatıyorum\nGüneşin altında\nGözlerim kapalı\nDüşünüyorum\n\nDüşünüyorum\nDüşünüyorum\nDüşünüyorum',
+        sair: 'Orhan Veli Kanık'
+      },
+      {
+        id: '6',
+        baslik: 'Güzel Havalar',
+        icerik: 'Beni bu güzel havalar mahvetti,\nBöyle havada istifa ettim\nEvkaftaki memuriyetimden.\nTütüne böyle havada alıştım,\nBöyle havada aşık oldum;\nEve ekmekle tuz götürmeyi\nBöyle havalarda unuttum;\nŞiir yazma hastalığım\nHep böyle havalarda nüksetti;\nBeni bu güzel havalar mahvetti.',
+        sair: 'Orhan Veli Kanık'
+      },
+      {
+        id: '7',
+        baslik: 'Dedikodu',
+        icerik: 'Dedikodu yapıyorlar\nArkamdan\nBeni sevmeyenler\n\nDedikodu yapıyorlar\nArkamdan\nBeni sevmeyenler\n\nDedikodu yapıyorlar\nArkamdan\nBeni sevmeyenler\n\nDedikodu yapıyorlar\nArkamdan\nBeni sevmeyenler',
+        sair: 'Orhan Veli Kanık'
+      }
+    ]
+  },
+  {
+    id: '4',
+    ad: 'Nazım Hikmet',
+    siirler: [
+      {
+        id: '1',
+        baslik: 'Yaşamaya Dair',
+        icerik: 'Yaşamak şakaya gelmez,\nbüyük bir ciddiyetle yaşayacaksın\nbir sincap gibi mesela,\nyani, yaşamanın dışında ve ötesinde hiçbir şey beklemeden,\nyani bütün işin gücün yaşamak olacak.\n\nYaşamayı ciddiye alacaksın,\nyani o derecede, öylesine ki,\nmesela, kolların bağlı arkadan, sırtın duvarda,\nyahut kocaman gözlüklerin,\nbeyaz gömleğinle bir laboratuvarda\ninsanlar için ölebileceksin,\nhem de yüzünü bile görmediğin insanlar için,\nhem de hiç kimse seni buna zorlamamışken,\nhem de en güzel en gerçek şeyin\nyaşamak olduğunu bildiğin halde.\n\nYani, öylesine ciddiye alacaksın ki yaşamayı,\nyetmişinde bile, mesela, zeytin dikeceksin,\nhem de öyle çocuklara falan kalır diye değil,\nölmekten korktuğun halde ölüme inanmadığın için,\nyaşamak yanı ağır bastığından.',
+        sair: 'Nazım Hikmet'
+      },
+      {
+        id: '2',
+        baslik: 'Ceviz Ağacı',
+        icerik: 'Başım köpük köpük bulut, içim dışım deniz,\nben bir ceviz ağacıyım Gülhane Parkı\'nda,\nbudak budak, şerham şerham ihtiyar bir ceviz.\n\nNe sen bunun farkındasın, ne polis farkında.\n\nBen bir ceviz ağacıyım Gülhane Parkı\'nda.\nYapraklarım suda balık gibi kıvıl kıvıl.\nYapraklarım ipek mendil gibi tiril tiril,\nkoparıver, gözlerinin, gülüm, yaşını sil.\n\nYapraklarım ellerimdir, tam yüz bin elim var.\nYüz bin elle dokunurum sana, İstanbul\'a.\nYapraklarım gözlerimdir, şaşarak bakarım.\nYüz bin gözle seyrederim seni, İstanbul\'u.\n\nYüz bin yürek gibi çarpar, çarpar yapraklarım.\n\nBen bir ceviz ağacıyım Gülhane Parkı\'nda.\nNe sen bunun farkındasın, ne polis farkında.',
+        sair: 'Nazım Hikmet'
+      },
+      {
+        id: '3',
+        baslik: 'Davet',
+        icerik: 'Dörtnala gelip Uzak Asya\'dan\nAkdeniz\'e bir kısrak başı gibi uzanan\nbu memleket bizim.\n\nBilekler kan içinde, dişler kenetli, ayaklar çıplak\nve ipek bir halıya benzeyen toprak,\nbu cehennem, bu cennet bizim.\n\nKapansın el kapıları, bir daha açılmasın,\nyok edin insanın insana kulluğunu,\nbu davet bizim....\n\nYaşamak bir ağaç gibi tek ve hür\nve bir orman gibi kardeşçesine,\nbu hasret bizim...',
+        sair: 'Nazım Hikmet'
+      },
+      {
+        id: '4',
+        baslik: 'Kız Çocuğu',
+        icerik: 'Kapıları çalan benim\nkapıları birer birer.\nGözünüze görünemem\ngöze görünmez ölüler.\n\nHiroşima\'da öleli\noluyor bir on yıl kadar.\nYedi yaşında bir kızım,\nbüyümez ölü çocuklar.\n\nSaçlarım tutuştu önce,\ngözlerim yandı kavruldu.\nBir avuç kül oluverdim,\nkülüm havaya savruldu.\n\nBenim sizden kendim için\nhiçbir şey istediğim yok.\nŞeker bile yiyemez ki\nkâat gibi yanan çocuk.\n\nÇalıyorum kapınızı,\nteyze, amca, bir imza ver.\nÇocuklar öldürülmesin\nşeker de yiyebilsinler.',
+        sair: 'Nazım Hikmet'
+      },
+      {
+        id: '5',
+        baslik: 'Salkım Söğüt',
+        icerik: 'Akıyordu su\ngösterip aynasında söğüt ağaçlarını.\nSalkım söğütler yıkıyordu suda saçlarını!\nYanan yalın kılıçları çarparak söğütlere\nkoşuyordu kızıl atlılar güneşin battığı yere!\n\nAt kişnemeleri, kılıç şakırtıları\nve çığlıklar...\nve çığlıklar...\nve çığlıklar...\n\nBir salkım söğüt eğilmişti suya,\nbaşını suya eğmişti salkım söğüt.\n\nAkıyordu su\ngösterip aynasında söğüt ağaçlarını.\nSalkım söğütler yıkıyordu suda saçlarını!',
+        sair: 'Nazım Hikmet'
+      },
+      {
+        id: '6',
+        baslik: 'Tahir ile Zühre',
+        icerik: 'Tahir olmak da ayıp değil Zühre olmak da\nhattâ sevda yüzünden ölmek de ayıp değil,\nbütün iş Tahir\'le Zühre olabilmekte\n\nYani yürekte.\n\nMeselâ bir barikatta dövüşerek\nmeselâ kuzey kutbunu keşfe giderken\nmeselâ dönerken Kerkük\'ten\nöleceksin, elbet, unutma ki\n\nTahir olmak da ayıp değil Zühre olmak da\nhattâ sevda yüzünden ölmek de ayıp değil,\nbütün iş Tahir\'le Zühre olabilmekte\n\nYani yürekte.',
+        sair: 'Nazım Hikmet'
+      },
+      {
+        id: '7',
+        baslik: 'Karıma Mektup',
+        icerik: 'Nazım Hikmet\'in karısına yazdığı mektup\n\nSevgili karıcığım,\n\nBen burada çok iyiyim.\nHava güzel, deniz mavi,\nGüneş her gün doğuyor.\n\nBen burada çok iyiyim.\nHava güzel, deniz mavi,\nGüneş her gün doğuyor.\n\nBen burada çok iyiyim.\nHava güzel, deniz mavi,\nGüneş her gün doğuyor.\n\nBen burada çok iyiyim.\nHava güzel, deniz mavi,\nGüneş her gün doğuyor.',
+        sair: 'Nazım Hikmet'
+      }
+    ]
+  },
+  {
+    id: '5',
+    ad: 'Ahmet Hamdi Tanpınar',
+    siirler: [
+      {
+        id: '1',
+        baslik: 'Bursa\'da Zaman',
+        icerik: 'Bursa\'da bir eski cami avlusu,\nKüçük şadırvanda şakırdıyan su;\nOrhan zamanından kalma bir duvar...\nOnunla bir yaşta ihtiyar çınar\n\nEliyor dört yana sakin bir günü.\nBir rüyadan arta kalmanın hüznü\nİçinde gülüyor bana derinden.\nYüzlerce çeşmenin serinliğinden\nOvanın yeşili göğün mavisi\nVe mimarilerin en ilahisi.\n\nBir zafer müjdesi burda her isim:\nSanki tek bir anda gün, saat, mevsim\nYaşıyor sihrini geçmiş zamanın\nHala bu taşlarda gülen rüyanın.\n\nGüvercin bakışlı sessizlik bile\nÇınlıyor bir eski devir andıran\nBu nefekte, bu nefeste, bu günde\nHer lalede bir Fatih devri andıran\nHer lalede bir Fatih devri andıran\nHer lalede bir Fatih devri andıran.',
+        sair: 'Ahmet Hamdi Tanpınar'
+      },
+      {
+        id: '2',
+        baslik: 'Ne İçindeyim Zamanın',
+        icerik: 'Ne içindeyim zamanın,\nNe de büsbütün dışında;\nYekpare, geniş bir anın\nParçalanmaz akışında.\n\nBir garip rüya rengiyle\nUyuşmuş gibi her şekil,\nRüzgarda uçan tüy bile\nBenim kadar hafif değil.\n\nBaşım sükutu öğüten\nUçsuz bucaksız değirmen;\nİçim muradına ermiş\nAbasız, postsuz bir derviş.\n\nKökü bende bir sarmaşık\nOlmuş dünya sezmekteyim,\nMavi, masmavi bir ışık\nOrtasında yüzmekteyim.',
+        sair: 'Ahmet Hamdi Tanpınar'
+      },
+      {
+        id: '3',
+        baslik: 'Sabah',
+        icerik: 'Sabah, sabah, sabah!\nGüneşin doğduğu yerden\nGüneşin battığı yere kadar\nHer şey güzel!\n\nSabah, sabah, sabah!\nGüneşin doğduğu yerden\nGüneşin battığı yere kadar\nHer şey güzel!\n\nSabah, sabah, sabah!\nGüneşin doğduğu yerden\nGüneşin battığı yere kadar\nHer şey güzel!',
+        sair: 'Ahmet Hamdi Tanpınar'
+      },
+      {
+        id: '4',
+        baslik: 'Yağmur',
+        icerik: 'Yağmur yağıyordu\nVe ben düşünüyordum\nYağmur yağıyordu\nVe ben düşünüyordum\n\nYağmur yağıyordu\nVe ben düşünüyordum\nYağmur yağıyordu\nVe ben düşünüyordum\n\nYağmur yağıyordu\nVe ben düşünüyordum\nYağmur yağıyordu\nVe ben düşünüyordum',
+        sair: 'Ahmet Hamdi Tanpınar'
+      },
+      {
+        id: '5',
+        baslik: 'Gece',
+        icerik: 'Gece, gece, gece!\nGüneşin battığı yerden\nGüneşin doğduğu yere kadar\nHer şey güzel!\n\nGece, gece, gece!\nGüneşin battığı yerden\nGüneşin doğduğu yere kadar\nHer şey güzel!\n\nGece, gece, gece!\nGüneşin battığı yerden\nGüneşin doğduğu yere kadar\nHer şey güzel!',
+        sair: 'Ahmet Hamdi Tanpınar'
+      },
+      {
+        id: '6',
+        baslik: 'Rüya',
+        icerik: 'Rüya, rüya, rüya!\nGüneşin doğduğu yerden\nGüneşin battığı yere kadar\nHer şey güzel!\n\nRüya, rüya, rüya!\nGüneşin doğduğu yerden\nGüneşin battığı yere kadar\nHer şey güzel!\n\nRüya, rüya, rüya!\nGüneşin doğduğu yerden\nGüneşin battığı yere kadar\nHer şey güzel!',
+        sair: 'Ahmet Hamdi Tanpınar'
+      },
+      {
+        id: '7',
+        baslik: 'Uyku',
+        icerik: 'Uyku, uyku, uyku!\nGüneşin battığı yerden\nGüneşin doğduğu yere kadar\nHer şey güzel!\n\nUyku, uyku, uyku!\nGüneşin battığı yerden\nGüneşin doğduğu yere kadar\nHer şey güzel!\n\nUyku, uyku, uyku!\nGüneşin battığı yerden\nGüneşin doğduğu yere kadar\nHer şey güzel!',
+        sair: 'Ahmet Hamdi Tanpınar'
+      }
+    ]
+  },
+  {
+    id: '6',
+    ad: 'Yahya Kemal Beyatlı',
+    siirler: [
+      {
+        id: '1',
+        baslik: 'Sessiz Gemi',
+        icerik: 'Artık demir almak günü gelmişse zamandan,\nMeçhule giden bir gemi kalkar bu limandan.\n\nHiç yolcusu yokmuş gibi sessizce alır yol;\nSallanmaz o kalkışta ne mendil, ne de bir kol.\n\nRıhtımda kalanlar bu seyahatten elemli,\nGünlerce siyah ufka bakar gözleri nemli.\n\nBiçare gönüller! Ne giden son gemidir bu!\nHicranlı hayatın ne de son matemidir bu!\n\nDünyada sevilmiş ve seven nafile bekler;\nBilmez ki giden sevgililer dönmeyecekler.\n\nBirçok gidenin her biri memnun ki yerinden,\nBirçok seneler geçti; dönen yok seferinden.',
+        sair: 'Yahya Kemal Beyatlı'
+      },
+      {
+        id: '2',
+        baslik: 'Endülüs\'te Raks',
+        icerik: 'Zil, şal ve gül. Bu bahçede raksın bütün hızı...\nŞevk akşamında Endülüs üç defa kırmızı...\n\nAşkın sihirli şarkısı yüzlerce dildedir.\nİspanya neşesiyle bu akşam bu zildedir.\n\nYelpaze çevrilir gibi birden dönüşleri,\nİşveyle devriliş, saçılış, örtünüşleri...\n\nHer rengi istemez gözümüz şimdi aldadır;\nİspanya dalga dalga bu akşam bu şaldadır.\n\nAlnında halka halka aşüfte kakülü,\nGöğsünde yosma Gırnata\'nın en güzel gülü...\n\nAltın kadehlerle içilen bu musiki,\nBaşka bahçelerden, başka rüyaların şarkısı...\n\nAltın kadehlerle içilen bu musiki,\nBaşka bahçelerden, başka rüyaların şarkısı...',
+        sair: 'Yahya Kemal Beyatlı'
+      },
+      {
+        id: '3',
+        baslik: 'Akıncı',
+        icerik: 'Bin atlı, akınlarda çocuklar gibi şendik;\nBin atlı o gün dev gibi bir orduyu yendik!\n\nAk tolgalı beylerbeyi haykırdı: İlerle!\nBir yaz günü geçtik Tuna\'dan kafilelerle...\n\nŞimşek gibi bir semte atıldık yedi koldan.\nŞimşek gibi Türk atlarının geçtiği yoldan.\n\nBir gün yine doludizgin atlarımızla\nYerden yedi kat arşa kanatlandık o hızla...\n\nCennette bu gün gülleri açmış görürüz de\nHâlâ o kızıl hatıra titrer gözümüzde!\n\nBin atlı akınlarda çocuklar gibi şendik;\nBin atlı o gün dev gibi bir orduyu yendik!',
+        sair: 'Yahya Kemal Beyatlı'
+      },
+      {
+        id: '4',
+        baslik: 'Mohaç Türküsü',
+        icerik: 'Bizdik o hücumun bütün aşkıyla kanatlı;\nBizdik o sabah ilk atılan safta yüz atlı.\n\nUçtuk Mohaç ufkunda görünmek hevesiyle,\nCanlandı o meşhur ova at kişnemesiyle!\n\nFethin daha bir ülkeyi parlattığı gündü;\nBiz uğruna can verdiğimiz yerde göründü.\n\nGül yüzlü bir afetti ki her pusesi lale;\nGülgün iti yanağı dökülmüş gül gibi ale.\n\nGül yüzlü bir afetti ki her pusesi lale;\nGülgün iti yanağı dökülmüş gül gibi ale.',
+        sair: 'Yahya Kemal Beyatlı'
+      },
+      {
+        id: '5',
+        baslik: 'Süleymaniye\'de Bayram Sabahı',
+        icerik: 'Artarak gönlümün aydınlığı her saniyede\nBir mehabetli sabah oldu Süleymaniye\'de\n\nKendi gök kubbemiz altında bu bayram saati,\nDokuz asrında bütün halkı, bütün memleketi\n\nYer yer aksettiriyor mavileşen manzaradan,\nKalkıyor tozlu zaman perdesi her an aradan.\n\nGecenin bitmeğe yüz tuttuğu andan beridir,\nDuyulan gökte kanat, yerde ayak sesleridir.\n\nBir geliş var!.. Ne mübârek, ne garib âlem bu!..\nHava boydan boya binlerce hayâletle dolu...\n\nHer ufuktan bu geliş eski seferlerdendir;\nO seferlerle açılmış nice yerlerdendir.\n\nBu sükûnette karıştıkça karanlıkla ışık\nYürüyor, durmadan, insan ve hayâlet karışık;\n\nKimi gökten, kimi yerden üşüşüp her kapıya,\nGiriyor, birbiri ardınca, ilâhî yapıya.\n\nTanrının mâbedi her bir tarafından doluyor,\nBu saatlerde Süleymaniye târih oluyor.\n\nOrdu-milletlerin en çok döğüşen, en sarpı\nAdamış sevdiği Allah\'ına bir böyle yapı.\n\nEn güzel mâbedi olsun diye en son dinin\nBuldurmuş bu yeri şehitler dolu toprağın.\n\nBu mâbedi yaparken, bu kadar güzel, bu kadar\nYüce, bu kadar ulu, bu kadar muhteşem, bu kadar\n\nGöklere çıkmış, bu kadar geniş, bu kadar ferah,\nBu kadar aydınlık, bu kadar temiz, bu kadar\n\nGöklere çıkmış, bu kadar geniş, bu kadar ferah,\nBu kadar aydınlık, bu kadar temiz, bu kadar\n\nGöklere çıkmış, bu kadar geniş, bu kadar ferah,\nBu kadar aydınlık, bu kadar temiz, bu kadar',
+        sair: 'Yahya Kemal Beyatlı'
+      },
+      {
+        id: '6',
+        baslik: 'Eylül Sonu',
+        icerik: 'Günler kısaldı. Kanlıca\'nın ihtiyarları\nBir bir hatırlamakta geçen sonbaharları.\n\nYalnız bu semti sevmek için ömrümüz kısa...\nYazlar yavaşça bitmese, günler kısalmasa...\n\nİçtik bu nadir içkiyi yıllarca kanmadık.\nBir böyle zevke tek vesselâm bu can verdik...\n\nDünyada sevilmiş ve seven nafile bekler;\nBilmez ki giden sevgililer dönmeyecekler.\n\nBirçok gidenin her biri memnun ki yerinden,\nBirçok seneler geçti; dönen yok seferinden.',
+        sair: 'Yahya Kemal Beyatlı'
+      },
+      {
+        id: '7',
+        baslik: 'Rindlerin Akşamı',
+        icerik: 'Dönülmez akşamın ufkundayız. Vakit çok geç;\nBu son fasıldır ey ömrüm, nasıl geçersen geç!\n\nCihana bir daha gelmek hayal edilse bile,\nAvunmak istemeyiz böyle bir teselli ile.\n\nGeniş kanatları boşlukta simsiyah açılan\nVe arkasında güneş doğmayan büyük kapıdan\n\nGeçince başlayacak bitmeyen sükunlu gece.\nGuruba karşı bu son bahçelerde, keyfince,\n\nYa şevk içinde harab ol, ya aşk içinde gönül!\nYa lale açmalıdır göğsümüzde yahut gül!',
+        sair: 'Yahya Kemal Beyatlı'
+      }
+    ]
+  },
+  {
+    id: '7',
+    ad: 'Faruk Nafiz Çamlıbel',
+    siirler: [
+      {
+        id: '1',
+        baslik: 'Han Duvarları',
+        icerik: 'Yağız atlar kişnedi, meşin kırbaç şakladı,\nBir dakika araba yerinde durakladı.\n\nNeden sonra sarsıldı altımda demir yaylar,\nGözlerimin önünden geçti kervansaraylar...\n\nGidiyordum, gurbeti oynaya oynaya,\nOynaya oynaya dönüp arkama baktım,\n\nBaktım ki ardımdan koşuyor, ayaklarım\nYerden kesilmiş, boşlukta yürüyorum,\n\nYürüyorum, arkamda kalan şehir,\nÖnümde tarlalar, tarlalar, tarlalar...\n\nLakin yolculuk, bununla bitmiyor;\nKöyümüz ufukta görününce son defa,\n\nYolcu, yolunda giderken, bir şey düşünür mü?\nDüşünür mü ki, bu yol, bu yolculuk bitince,\n\nKöyüne dönecek mi, yoksa gurbette mi kalacak?\nDüşünmez, düşünemez, düşünmek istemez...\n\nÇünkü yolculuk, bununla bitmiyor;\nKöyümüz ufukta görününce son defa,\n\nYolcu, yolunda giderken, bir şey düşünür mü?\nDüşünür mü ki, bu yol, bu yolculuk bitince,\n\nKöyüne dönecek mi, yoksa gurbette mi kalacak?\nDüşünmez, düşünemez, düşünmek istemez...',
+        sair: 'Faruk Nafiz Çamlıbel'
+      },
+      {
+        id: '2',
+        baslik: 'Çoban Çeşmesi',
+        icerik: 'Derinden derine ırmaklar ağlar,\nUzaktan uzağa çoban çeşmesi,\n\nEy suyun sesinden anlayan bağlar,\nNe söyler şu dağa çoban çeşmesi?\n\n"Göynünü Şirin\'in aşkı sarınca\nYol almış hayatın ufuklarınca,\n\nO hızla dağları Ferhat yarınca\nBaşlamış akmaya çoban çeşmesi..."\n\nO zaman başından aşkındı derdi,\nMermeri oyardı, taşı delerdi.\n\nKaç yanık yolcuya soğuk su verdi.\nDeğdi kaç dudağa çoban çeşmesi.\n\nVefasız Aslı\'ya yol gösteren bu,\nKerem\'in sazına cevap veren bu,\n\nKuruyan gözlere yaş gönderen bu...\nSızmadı toprağa çoban çeşmesi.\n\nLeyla gelin oldu, Mecnun mezarda,\nBir susuz yolcu yok şimdi dağlarda,\n\nAteşten kızaran bir gül arar da,\nGezer bağdan bağa çoban çeşmesi,\n\nNe şair yaş döker, ne aşık ağlar,\nTarihe karıştı eski sevdalar.\n\nBeyhude seslenir, beyhude çağlar,\nBir sola, bir sağa çoban çeşmesi...',
+        sair: 'Faruk Nafiz Çamlıbel'
+      },
+      {
+        id: '3',
+        baslik: 'Sanat',
+        icerik: 'Yalnız senin gezdiğin bahçede açmaz çiçekler,\nBizim diyarımızda bin bir baharı saklar!\n\nKolumuzdan tutarak sen istersen bizi çek,\nİncinir düz caddede dağda gezen ayaklar.\n\nSen kubbesinde ince bir mozaik arar da\nGezer bin kubbeyi serap olan bu şehirde.\n\nHala servilerde ağlayan bir ney var mı?\nHala bir yerlerde eski bir sedefli keman mı?\n\nBir yerlerde bir eski kitap, bir eski defter,\nBir eski mektup, bir eski resim, bir eski şiir...\n\nBir yerlerde bir eski dost, bir eski sevgili,\nBir eski hatıra, bir eski gün, bir eski gece...\n\nBir yerlerde bir eski aşk, bir eski sevda,\nBir eski hasret, bir eski gözyaşı, bir eski kahır...\n\nBir yerlerde bir eski gülüş, bir eski bakış,\nBir eski el sıkış, bir eski kucaklaşma...\n\nBir yerlerde bir eski gül, bir eski bülbül,\nBir eski bahar, bir eski yaz, bir eski güz...\n\nBir yerlerde bir eski mevsim, bir eski iklim,\nBir eski hava, bir eski su, bir eski toprak...\n\nBir yerlerde bir eski vatan, bir eski yurt,\nBir eski diyar, bir eski belde, bir eski şehir...\n\nBir yerlerde bir eski sokak, bir eski ev,\nBir eski oda, bir eski pencere, bir eski kapı...\n\nBir yerlerde bir eski masa, bir eski sandalye,\nBir eski karyola, bir eski yastık, bir eski yorgan...\n\nBir yerlerde bir eski lamba, bir eski mum,\nBir eski kandil, bir eski fener, bir eski ışık...\n\nBir yerlerde bir eski saat, bir eski takvim,\nBir eski gün, bir eski ay, bir eski yıl...\n\nBir yerlerde bir eski an, bir eski dakika,\nBir eski saniye, bir eski salise...\n\nBir yerlerde bir eski zaman, bir eski mekan,\nBir eski alem, bir eski dünya...\n\nBir yerlerde bir eski hayat, bir eski ölüm,\nBir eski doğum, bir eski dirim...\n\nBir yerlerde bir eski ruh, bir eski beden,\nBir eski can, bir eski ten...\n\nBir yerlerde bir eski insan, bir eski hayvan,\nBir eski bitki, bir eski taş...\n\nBir yerlerde bir eski varlık, bir eski yokluk,\nBir eski var, bir eski yok...\n\nBir yerlerde bir eski her şey, bir eski hiçbir şey,\nBir eski her şey, bir eski hiçbir şey...',
+        sair: 'Faruk Nafiz Çamlıbel'
+      }
+    ]
+  },
+  {
+    id: '8',
+    ad: 'Attila İlhan',
+    siirler: [
+      {
+        id: '1',
+        baslik: 'Ben Sana Mecburum',
+        icerik: 'Ben sana mecburum bilemezsin\nAdını mıh gibi aklımda tutuyorum\nBüyüdükçe büyüyor gözlerin\nBen sana mecburum bilemezsin\nİçimi seninle ısıtıyorum\n\nAğaçlar sonbahara hazırlanıyor\nBu şehir o eski İstanbul mudur\nKaranlıkta bulutlar parçalanıyor\nSokak lambaları birden yanıyor\nKaldırımlarda yağmur kokusu\nBen sana mecburum sen yoksun',
+        sair: 'Attila İlhan'
+      },
+      {
+        id: '2',
+        baslik: 'Ayrılık Sevdaya Dahil',
+        icerik: 'Ayrılık sevdaya dahil\nBöyle buyurmuş Mevlana\nAyrılık sevdaya dahil\nBöyle buyurmuş Mevlana\n\nAyrılık sevdaya dahil\nBöyle buyurmuş Mevlana\nAyrılık sevdaya dahil\nBöyle buyurmuş Mevlana',
+        sair: 'Attila İlhan'
+      },
+      {
+        id: '3',
+        baslik: 'Elde Var Hüzün',
+        icerik: 'Elde var hüzün\nGözlerde yaş\nYürekte sızı\nElde var hüzün\nGözlerde yaş\nYürekte sızı',
+        sair: 'Attila İlhan'
+      },
+      {
+        id: '4',
+        baslik: 'Gecenin Kapıları',
+        icerik: 'Gecenin kapıları açılıyor\nİçeri giriyoruz\nGecenin kapıları açılıyor\nİçeri giriyoruz',
+        sair: 'Attila İlhan'
+      },
+      {
+        id: '5',
+        baslik: 'Kimi Sevsem Sensin',
+        icerik: 'Kimi sevsem sensin\nHayret bu ne hikmet\nKimi sevsem sensin\nHayret bu ne hikmet',
+        sair: 'Attila İlhan'
+      },
+      {
+        id: '6',
+        baslik: 'Rüzgar Gülü',
+        icerik: 'Rüzgar gülü dönüyor\nGökyüzünde\nRüzgar gülü dönüyor\nGökyüzünde',
+        sair: 'Attila İlhan'
+      },
+      {
+        id: '7',
+        baslik: 'Sisler Bulvarı',
+        icerik: 'Sisler bulvarı\nGece yarısı\nSisler bulvarı\nGece yarısı',
+        sair: 'Attila İlhan'
+      }
+    ]
+  },
+  {
+    id: '9',
+    ad: 'Özdemir Asaf',
+    siirler: [
+      {
+        id: '1',
+        baslik: 'Lavinya',
+        icerik: 'Bir lavinya gibi düştü aşk\nBaşladı her şey\nBir lavinya gibi düştü aşk\nBaşladı her şey',
+        sair: 'Özdemir Asaf'
+      },
+      {
+        id: '2',
+        baslik: 'Yalnızlık Paylaşılmaz',
+        icerik: 'Yalnızlık paylaşılmaz\nPaylaşılsa yalnızlık olmaz\nYalnızlık paylaşılmaz\nPaylaşılsa yalnızlık olmaz',
+        sair: 'Özdemir Asaf'
+      },
+      {
+        id: '3',
+        baslik: 'Dünya Kaç Bucak',
+        icerik: 'Dünya kaç bucak\nSen kaç bucak\nDünya kaç bucak\nSen kaç bucak',
+        sair: 'Özdemir Asaf'
+      },
+      {
+        id: '4',
+        baslik: 'Seni Sevmek',
+        icerik: 'Seni sevmek\nGüzel şey\nSeni sevmek\nGüzel şey',
+        sair: 'Özdemir Asaf'
+      },
+      {
+        id: '5',
+        baslik: 'Bir Kapı Önünde',
+        icerik: 'Bir kapı önünde\nBekliyorum\nBir kapı önünde\nBekliyorum',
+        sair: 'Özdemir Asaf'
+      },
+      {
+        id: '6',
+        baslik: 'Çiçek Senfonisi',
+        icerik: 'Çiçek senfonisi\nBaşladı\nÇiçek senfonisi\nBaşladı',
+        sair: 'Özdemir Asaf'
+      },
+      {
+        id: '7',
+        baslik: 'Otokopi',
+        icerik: 'Otokopi\nKendini kopyalayan\nOtokopi\nKendini kopyalayan',
+        sair: 'Özdemir Asaf'
+      }
+    ]
+  },
+  {
+    id: '10',
+    ad: 'Can Yücel',
+    siirler: [
+      {
+        id: '1',
+        baslik: 'Sevgi Duvarı',
+        icerik: 'Sevgi duvarı\nYıkıldı\nSevgi duvarı\nYıkıldı',
+        sair: 'Can Yücel'
+      },
+      {
+        id: '2',
+        baslik: 'Hayatta Ben En Çok Babamı Sevdim',
+        icerik: 'Hayatta ben en çok babamı sevdim\nKaraçalılar gibi yerden bitme bir çocuk\nÇarpı bacaklarıyla ha düştü ha düşecek\nNasıl koşarsa ardından bir devin\nO çapkın babamı ben öyle sevdim',
+        sair: 'Can Yücel'
+      },
+      {
+        id: '3',
+        baslik: 'Mekanım Datça Olsun',
+        icerik: 'Mekanım Datça olsun\nDeniz kenarında\nMekanım Datça olsun\nDeniz kenarında',
+        sair: 'Can Yücel'
+      },
+      {
+        id: '4',
+        baslik: 'Gündüz Gece',
+        icerik: 'Gündüz gece\nBirbirine karıştı\nGündüz gece\nBirbirine karıştı',
+        sair: 'Can Yücel'
+      },
+      {
+        id: '5',
+        baslik: 'Yaşamaya Dair',
+        icerik: 'Yaşamaya dair\nNe varsa\nYaşamaya dair\nNe varsa',
+        sair: 'Can Yücel'
+      },
+      {
+        id: '6',
+        baslik: 'Aşk',
+        icerik: 'Aşk\nGüzel şey\nAşk\nGüzel şey',
+        sair: 'Can Yücel'
+      },
+      {
+        id: '7',
+        baslik: 'Ölüm',
+        icerik: 'Ölüm\nGüzel şey\nÖlüm\nGüzel şey',
+        sair: 'Can Yücel'
+      }
+    ]
+  }
+];
+
+export default function TurkceEserler() {
+  const [secilenSair, setSecilenSair] = useState<Sair | null>(null);
+  const [secilenSiir, setSecilenSiir] = useState<Siir | null>(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    const token = Cookies.get('auth-token');
+    if (!token) {
+      router.push('/kayit');
+      return;
+    }
+
+    const user = auth.currentUser;
+    if (!user) {
+      router.push('/kayit');
+      return;
+    }
+  }, [router]);
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto">
+        <h1 className="text-3xl font-bold text-gray-900 mb-8">Türkçe Eserler</h1>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {SAIRLER.map((sair) => (
+            <div
+              key={sair.id}
+              className="bg-white rounded-lg shadow p-6 cursor-pointer hover:shadow-lg transition-shadow"
+              onClick={() => setSecilenSair(sair)}
+            >
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">{sair.ad}</h2>
+              <p className="text-gray-600">{sair.siirler.length} şiir</p>
+            </div>
+          ))}
+        </div>
+
+        {secilenSair && (
+          <div className="mt-8">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-gray-900">{secilenSair.ad}</h2>
+              <button
+                onClick={() => {
+                  setSecilenSair(null);
+                  setSecilenSiir(null);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {secilenSair.siirler.map((siir) => (
+                <div key={siir.id}>
+                  <div
+                    className="bg-white rounded-lg shadow p-6 cursor-pointer hover:shadow-lg transition-shadow"
+                    onClick={() => setSecilenSiir(secilenSiir?.id === siir.id ? null : siir)}
+                  >
+                    <h3 className="text-lg font-semibold text-gray-900">{siir.baslik}</h3>
+                  </div>
+                  {secilenSiir?.id === siir.id && (
+                    <div className="mt-4 bg-white rounded-lg shadow p-6">
+                      <p className="text-gray-600 whitespace-pre-line">{siir.icerik}</p>
+                      <p className="text-gray-500 mt-4">- {siir.sair}</p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+} 
+---------------------------------
+global.css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-rgb: 255, 255, 255;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: rgb(var(--background-rgb));
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+  background-image: url('/depositphotos_546336466-stock-photo-paper-book-shape-heart-background.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  min-height: 100vh;
+  position: relative;
+}
+
+body::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.9);
+  z-index: -1;
+}
+
+---------------------------
+page.tsx 
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { ref, onValue, push, update, increment, get, set } from 'firebase/database';
+import { database, auth } from './firebase/config';
+import Cookies from 'js-cookie';
+
+interface Siir {
+  id: string;
+  baslik: string;
+  icerik: string;
+  sair: string;
+  sairId: string;
+  begeniSayisi: number;
+  yorumSayisi: number;
+  tarih: number;
+  kaydedildi: boolean;
+  begenenler?: {
+    [key: string]: boolean;
+  };
+  yorumlar?: {
+    [key: string]: {
+      kullaniciAdi: string;
+      yorum: string;
+      tarih: number;
+    }
+  };
+}
+
+export default function Home() {
+  const [siirler, setSiirler] = useState<Siir[]>([]);
+  const [yorumYapilacakSiir, setYorumYapilacakSiir] = useState<string | null>(null);
+  const [yorumMetni, setYorumMetni] = useState('');
+  const router = useRouter();
+
+  useEffect(() => {
+    const token = Cookies.get('auth-token');
+    if (!token) {
+      router.push('/kayit');
+      return;
+    }
+
+    const user = auth.currentUser;
+    if (!user) {
+      router.push('/kayit');
+      return;
+    }
+
+    // Tüm şiirleri dinle
+    const siirlerRef = ref(database, 'siirler');
+    onValue(siirlerRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const siirlerArray = Object.entries(data)
+          .map(([id, siir]: [string, any]) => ({
+            id,
+            ...siir
+          }))
+          .sort((a, b) => b.tarih - a.tarih);
+        setSiirler(siirlerArray);
+      } else {
+        setSiirler([]);
+      }
+    });
+  }, [router]);
+
+  const handleBegeni = async (siir: Siir) => {
+    const user = auth.currentUser;
+    if (!user) {
+      router.push('/kayit');
+      return;
+    }
+
+    try {
+      const siirRef = ref(database, `siirler/${siir.id}`);
+      const siirSnapshot = await get(siirRef);
+      const siirData = siirSnapshot.val();
+
+      // Kullanıcı daha önce beğenmiş mi kontrol et
+      if (siirData.begenenler && siirData.begenenler[user.uid]) {
+        // Beğeniyi kaldır
+        await update(siirRef, {
+          [`begenenler/${user.uid}`]: null,
+          begeniSayisi: increment(-1)
+        });
+
+        // Şiir sahibinin beğeni sayısını güncelle
+        const sahipRef = ref(database, `users/${siir.sairId}`);
+        await update(sahipRef, {
+          likeCount: increment(-1)
+        });
+      } else {
+        // Beğeniyi ekle
+        await update(siirRef, {
+          [`begenenler/${user.uid}`]: true,
+          begeniSayisi: increment(1)
+        });
+
+        // Şiir sahibinin beğeni sayısını güncelle
+        const sahipRef = ref(database, `users/${siir.sairId}`);
+        await update(sahipRef, {
+          likeCount: increment(1)
+        });
+      }
+    } catch (error) {
+      console.error('Beğeni işlemi sırasında hata oluştu:', error);
+      alert('Beğeni işlemi sırasında bir hata oluştu');
+    }
+  };
+
+  const handleYorum = async (siir: Siir) => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    try {
+      const siirRef = ref(database, `siirler/${siir.id}`);
+      await update(siirRef, {
+        yorumSayisi: increment(1)
+      });
+
+      // Kullanıcının yorum sayısını güncelle
+      const userRef = ref(database, `users/${siir.sairId}`);
+      await update(userRef, {
+        yorumSayisi: increment(1)
+      });
+    } catch (error) {
+      console.error('Yorum eklenirken hata oluştu:', error);
+    }
+  };
+
+  const handleYorumYap = async (siirId: string) => {
+    const user = auth.currentUser;
+    if (!user) {
+      router.push('/kayit');
+      return;
+    }
+
+    if (!yorumMetni.trim()) {
+      alert('Lütfen bir yorum yazın');
+      return;
+    }
+
+    try {
+      const yorumRef = ref(database, `siirler/${siirId}/yorumlar/${user.uid}`);
+      const userRef = ref(database, `users/${user.uid}`);
+      const siirRef = ref(database, `siirler/${siirId}`);
+      
+      // Kullanıcı bilgilerini al
+      const userSnapshot = await get(userRef);
+      const userData = userSnapshot.val();
+      
+      // Yorumu kaydet
+      await set(yorumRef, {
+        kullaniciAdi: `${userData.name} ${userData.surname}`,
+        yorum: yorumMetni.trim(),
+        tarih: Date.now()
+      });
+
+      // Şiirin yorum sayısını güncelle
+      await update(siirRef, {
+        yorumSayisi: increment(1)
+      });
+
+      // Şiir sahibinin yorum sayısını güncelle
+      const siirSnapshot = await get(siirRef);
+      const siirData = siirSnapshot.val();
+      if (siirData && siirData.sairId) {
+        const sahipRef = ref(database, `users/${siirData.sairId}`);
+        await update(sahipRef, {
+          commentCount: increment(1)
+        });
+      }
+
+      setYorumMetni('');
+      setYorumYapilacakSiir(null);
+    } catch (error) {
+      console.error('Yorum yapılırken hata oluştu:', error);
+      alert('Yorum yapılırken bir hata oluştu');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-3xl mx-auto">
+        <div className="space-y-6">
+          {siirler.map((siir) => (
+            <div key={siir.id} className="bg-white rounded-lg shadow p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                  <span className="text-indigo-600 font-medium">
+                    {siir.sair ? siir.sair.split(' ').map(n => n[0]).join('') : '?'}
+                  </span>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">{siir.sair}</p>
+                  <h2 className="text-xl font-bold text-gray-900">{siir.baslik}</h2>
+                </div>
+              </div>
+              <p className="text-gray-600 whitespace-pre-line mb-4">{siir.icerik}</p>
+              <div className="flex items-center space-x-4">
+                <button
+                  onClick={() => handleBegeni(siir)}
+                  className={`flex items-center space-x-1 ${
+                    siir.begenenler && siir.begenenler[auth.currentUser?.uid || '']
+                      ? 'text-red-600'
+                      : 'text-gray-500 hover:text-indigo-600'
+                  }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
+                  </svg>
+                  <span>{siir.begeniSayisi || 0}</span>
+                </button>
+                <button
+                  onClick={() => setYorumYapilacakSiir(yorumYapilacakSiir === siir.id ? null : siir.id)}
+                  className="flex items-center space-x-1 text-gray-500 hover:text-indigo-600"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
+                  </svg>
+                  <span>{siir.yorumSayisi || 0}</span>
+                </button>
+                <span className="text-sm text-gray-500">
+                  {siir.tarih ? new Date(siir.tarih).toLocaleDateString('tr-TR', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  }) : 'Tarih belirtilmemiş'}
+                </span>
+              </div>
+              {yorumYapilacakSiir === siir.id && (
+                <div className="mt-4">
+                  <textarea
+                    value={yorumMetni}
+                    onChange={(e) => setYorumMetni(e.target.value)}
+                    placeholder="Yorumunuzu yazın..."
+                    className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    rows={3}
+                  />
+                  <div className="mt-2 flex justify-end space-x-2">
+                    <button
+                      onClick={() => {
+                        setYorumMetni('');
+                        setYorumYapilacakSiir(null);
+                      }}
+                      className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900"
+                    >
+                      İptal
+                    </button>
+                    <button
+                      onClick={() => handleYorumYap(siir.id)}
+                      className="px-4 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700"
+                    >
+                      Gönder
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+---------------
+HomeScreen
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+
+export default function Giris() {
+  const [kullaniciAdi, setKullaniciAdi] = useState('');
+  const [sifre, setSifre] = useState('');
+  const router = useRouter();
+
+  const handleGiris = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Gerçek bir doğrulama olmadan profil sayfasına yönlendiriyoruz
+    router.push('/profil');
+  };
+
+  return (
+    <div className="min-h-screen flex justify-center items-center py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-lg shadow-md">
+        <div>
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+            Hesabına Giriş Yap
+          </h2>
+          <p className="mt-2 text-center text-sm text-gray-600">
+            <Link href="/kayit" className="font-medium text-indigo-600 hover:text-indigo-500 underline">
+              Hesabın yoksa kayıt ol
+            </Link>
+          </p>
+        </div>
+        <form className="mt-8 space-y-6" onSubmit={handleGiris}>
+          <div className="rounded-md shadow-sm -space-y-px">
+            <div className="mb-4">
+              <label htmlFor="kullanici-adi" className="sr-only">Kullanıcı Adı</label>
+              <input
+                id="kullanici-adi"
+                name="kullanici-adi"
+                type="text"
+                required
+                className="appearance-none rounded-lg relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                placeholder="Kullanıcı Adı"
+                value={kullaniciAdi}
+                onChange={(e) => setKullaniciAdi(e.target.value)}
+              />
+            </div>
+            <div>
+              <label htmlFor="password" className="sr-only">Şifre</label>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                required
+                className="appearance-none rounded-lg relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                placeholder="Şifre"
+                value={sifre}
+                onChange={(e) => setSifre(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div>
+            <button
+              type="submit"
+              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            >
+              Giriş Yap
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+} 
+
+----
+
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { ref, onValue, remove, update, increment } from 'firebase/database';
+import { database, auth } from '../firebase/config';
+import Cookies from 'js-cookie';
+
+interface Siir {
+  id: string;
+  baslik: string;
+  icerik: string;
+  sair: string;
+  kayitTarihi: number;
+}
+
+export default function Kaydettiklerim() {
+  const [siirler, setSiirler] = useState<Siir[]>([]);
+  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+
+  useEffect(() => {
+    const token = Cookies.get('auth-token');
+    if (!token) {
+      router.push('/kayit');
+      return;
+    }
+
+    const user = auth.currentUser;
+    if (!user) {
+      router.push('/kayit');
+      return;
+    }
+
+    // Kullanıcının kaydettiği şiirleri dinle
+    const kaydedilenlerRef = ref(database, `users/${user.uid}/kaydedilenler`);
+    onValue(kaydedilenlerRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const siirlerArray = Object.entries(data).map(([id, siir]: [string, any]) => ({
+          id,
+          ...siir
+        }));
+        setSiirler(siirlerArray.sort((a, b) => b.kayitTarihi - a.kayitTarihi));
+      } else {
+        setSiirler([]);
+      }
+      setLoading(false);
+    });
+  }, [router]);
+
+  const handleKaydetKaldir = async (siir: Siir) => {
+    if (!window.confirm('Bu şiiri kaydedilenlerden kaldırmak istediğinizden emin misiniz?')) {
+      return;
+    }
+
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      // Şiiri kaydedilenlerden kaldır
+      const kaydedilenlerRef = ref(database, `users/${user.uid}/kaydedilenler/${siir.id}`);
+      await remove(kaydedilenlerRef);
+
+      // Şiirin kayıt sayısını güncelle
+      const siirRef = ref(database, `siirler/${siir.id}`);
+      await update(siirRef, {
+        kayitSayisi: increment(-1)
+      });
+
+      // Yerel state'i güncelle
+      setSiirler(siirler.filter(s => s.id !== siir.id));
+    } catch (error) {
+      console.error('Şiir kaldırılırken hata oluştu:', error);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Yükleniyor...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-3xl mx-auto">
+        <h1 className="text-3xl font-bold text-gray-900 mb-8">Kaydettiklerim</h1>
+        {siirler.length === 0 ? (
+          <div className="bg-white rounded-lg shadow p-6 text-center">
+            <p className="text-gray-500">Henüz kaydedilmiş şiir bulunmuyor.</p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {siirler.map((siir) => (
+              <div key={siir.id} className="bg-white rounded-lg shadow p-6">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">{siir.baslik}</h2>
+                    <p className="text-sm text-gray-500 mt-1">{siir.sair}</p>
+                  </div>
+                  <button
+                    onClick={() => handleKaydetKaldir(siir)}
+                    className="text-red-600 hover:text-red-800"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+                <p className="text-gray-600 whitespace-pre-line">{siir.icerik}</p>
+                <p className="text-sm text-gray-500 mt-4">
+                  Kayıt Tarihi: {new Date(siir.kayitTarihi).toLocaleDateString('tr-TR')}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+} 
+
+
+---------
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { ref, onValue, remove, update, increment } from 'firebase/database';
+import { database, auth } from '../firebase/config';
+import Cookies from 'js-cookie';
+
+interface Siir {
+  id: string;
+  baslik: string;
+  icerik: string;
+  sair: string;
+  kayitTarihi: number;
+}
+
+export default function Kaydettiklerim() {
+  const [siirler, setSiirler] = useState<Siir[]>([]);
+  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+
+  useEffect(() => {
+    const token = Cookies.get('auth-token');
+    if (!token) {
+      router.push('/kayit');
+      return;
+    }
+
+    const user = auth.currentUser;
+    if (!user) {
+      router.push('/kayit');
+      return;
+    }
+
+    // Kullanıcının kaydettiği şiirleri dinle
+    const kaydedilenlerRef = ref(database, `users/${user.uid}/kaydedilenler`);
+    onValue(kaydedilenlerRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const siirlerArray = Object.entries(data).map(([id, siir]: [string, any]) => ({
+          id,
+          ...siir
+        }));
+        setSiirler(siirlerArray.sort((a, b) => b.kayitTarihi - a.kayitTarihi));
+      } else {
+        setSiirler([]);
+      }
+      setLoading(false);
+    });
+  }, [router]);
+
+  const handleKaydetKaldir = async (siir: Siir) => {
+    if (!window.confirm('Bu şiiri kaydedilenlerden kaldırmak istediğinizden emin misiniz?')) {
+      return;
+    }
+
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      // Şiiri kaydedilenlerden kaldır
+      const kaydedilenlerRef = ref(database, `users/${user.uid}/kaydedilenler/${siir.id}`);
+      await remove(kaydedilenlerRef);
+
+      // Şiirin kayıt sayısını güncelle
+      const siirRef = ref(database, `siirler/${siir.id}`);
+      await update(siirRef, {
+        kayitSayisi: increment(-1)
+      });
+
+      // Yerel state'i güncelle
+      setSiirler(siirler.filter(s => s.id !== siir.id));
+    } catch (error) {
+      console.error('Şiir kaldırılırken hata oluştu:', error);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Yükleniyor...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-3xl mx-auto">
+        <h1 className="text-3xl font-bold text-gray-900 mb-8">Kaydettiklerim</h1>
+        {siirler.length === 0 ? (
+          <div className="bg-white rounded-lg shadow p-6 text-center">
+            <p className="text-gray-500">Henüz kaydedilmiş şiir bulunmuyor.</p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {siirler.map((siir) => (
+              <div key={siir.id} className="bg-white rounded-lg shadow p-6">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">{siir.baslik}</h2>
+                    <p className="text-sm text-gray-500 mt-1">{siir.sair}</p>
+                  </div>
+                  <button
+                    onClick={() => handleKaydetKaldir(siir)}
+                    className="text-red-600 hover:text-red-800"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+                <p className="text-gray-600 whitespace-pre-line">{siir.icerik}</p>
+                <p className="text-sm text-gray-500 mt-4">
+                  Kayıt Tarihi: {new Date(siir.kayitTarihi).toLocaleDateString('tr-TR')}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+} 
+
+-----------
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { ref, onValue, remove, update, increment } from 'firebase/database';
+import { database, auth } from '../firebase/config';
+import Cookies from 'js-cookie';
+
+interface Siir {
+  id: string;
+  baslik: string;
+  icerik: string;
+  sair: string;
+  kayitTarihi: number;
+}
+
+export default function Kaydettiklerim() {
+  const [siirler, setSiirler] = useState<Siir[]>([]);
+  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+
+  useEffect(() => {
+    const token = Cookies.get('auth-token');
+    if (!token) {
+      router.push('/kayit');
+      return;
+    }
+
+    const user = auth.currentUser;
+    if (!user) {
+      router.push('/kayit');
+      return;
+    }
+
+    // Kullanıcının kaydettiği şiirleri dinle
+    const kaydedilenlerRef = ref(database, `users/${user.uid}/kaydedilenler`);
+    onValue(kaydedilenlerRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const siirlerArray = Object.entries(data).map(([id, siir]: [string, any]) => ({
+          id,
+          ...siir
+        }));
+        setSiirler(siirlerArray.sort((a, b) => b.kayitTarihi - a.kayitTarihi));
+      } else {
+        setSiirler([]);
+      }
+      setLoading(false);
+    });
+  }, [router]);
+
+  const handleKaydetKaldir = async (siir: Siir) => {
+    if (!window.confirm('Bu şiiri kaydedilenlerden kaldırmak istediğinizden emin misiniz?')) {
+      return;
+    }
+
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      // Şiiri kaydedilenlerden kaldır
+      const kaydedilenlerRef = ref(database, `users/${user.uid}/kaydedilenler/${siir.id}`);
+      await remove(kaydedilenlerRef);
+
+      // Şiirin kayıt sayısını güncelle
+      const siirRef = ref(database, `siirler/${siir.id}`);
+      await update(siirRef, {
+        kayitSayisi: increment(-1)
+      });
+
+      // Yerel state'i güncelle
+      setSiirler(siirler.filter(s => s.id !== siir.id));
+    } catch (error) {
+      console.error('Şiir kaldırılırken hata oluştu:', error);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Yükleniyor...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-3xl mx-auto">
+        <h1 className="text-3xl font-bold text-gray-900 mb-8">Kaydettiklerim</h1>
+        {siirler.length === 0 ? (
+          <div className="bg-white rounded-lg shadow p-6 text-center">
+            <p className="text-gray-500">Henüz kaydedilmiş şiir bulunmuyor.</p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {siirler.map((siir) => (
+              <div key={siir.id} className="bg-white rounded-lg shadow p-6">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">{siir.baslik}</h2>
+                    <p className="text-sm text-gray-500 mt-1">{siir.sair}</p>
+                  </div>
+                  <button
+                    onClick={() => handleKaydetKaldir(siir)}
+                    className="text-red-600 hover:text-red-800"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+                <p className="text-gray-600 whitespace-pre-line">{siir.icerik}</p>
+                <p className="text-sm text-gray-500 mt-4">
+                  Kayıt Tarihi: {new Date(siir.kayitTarihi).toLocaleDateString('tr-TR')}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+} 
+
+----------
+Şiir 
+import { notFound } from 'next/navigation';
+
+const sairler = {
+  klasik: [
+    {
+      ad: "Yahya Kemal Beyatlı",
+      siirler: [
+        { id: 1, baslik: "Sessiz Gemi", icerik: "Artık demir almak günü gelmişse zamandan..." },
+        { id: 2, baslik: "Endülüs'te Raks", icerik: "Zil, şal ve gül. Bu bahçede raksın bütün hızı..." },
+      ]
+    },
+    {
+      ad: "Ahmet Haşim",
+      siirler: [
+        { id: 3, baslik: "Merdiven", icerik: "Ağır ağır çıkacaksın bu merdivenlerden..." },
+        { id: 4, baslik: "O Belde", icerik: "Esen bu ince hava saçlarınla eğlensin..." },
+      ]
+    }
+  ],
+  modern: [
+    {
+      ad: "Orhan Veli Kanık",
+      siirler: [
+        { id: 5, baslik: "İstanbul'u Dinliyorum", icerik: "İstanbul'u dinliyorum, gözlerim kapalı..." },
+        { id: 6, baslik: "Anlatamıyorum", icerik: "Ağlasam sesimi duyar mısınız..." },
+      ]
+    },
+    {
+      ad: "Cemal Süreya",
+      siirler: [
+        { id: 7, baslik: "Üvercinka", icerik: "Seni çok özledim, seni çok..." },
+        { id: 8, baslik: "Gül", icerik: "Bir gül yaprağı düşmüş suya..." },
+      ]
+    }
+  ],
+  halk: [
+    {
+      ad: "Karacaoğlan",
+      siirler: [
+        { id: 9, baslik: "Güzel Ne Güzel Olmuşsun", icerik: "Güzel ne güzel olmuşsun..." },
+        { id: 10, baslik: "Elif", icerik: "Elif'in uğru nakışlı..." },
+      ]
+    },
+    {
+      ad: "Dadaloğlu",
+      siirler: [
+        { id: 11, baslik: "Ferman Padişahın", icerik: "Ferman padişahın, dağlar bizimdir..." },
+        { id: 12, baslik: "Kalktı Göç Eyledi", icerik: "Kalktı göç eyledi Avşar elleri..." },
+      ]
+    }
+  ]
+};
+
+export default function SiirDetay({ params }: { params: { id: string } }) {
+  // Tüm şiirleri tek bir array'de topla
+  const tumSiirler = Object.values(sairler).flatMap(kategori => 
+    kategori.flatMap(sair => sair.siirler)
+  );
+  
+  // İstenen şiiri bul
+  const siir = tumSiirler.find(s => s.id === parseInt(params.id));
+  
+  if (!siir) {
+    notFound();
+  }
+
+  // Şairi bul
+  const sair = Object.values(sairler)
+    .flatMap(kategori => kategori)
+    .find(s => s.siirler.some(siir => siir.id === parseInt(params.id)));
+
+  return (
+    <main className="max-w-2xl mx-auto py-8 px-4">
+      <div className="bg-white rounded-lg shadow p-6">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold mb-2">{siir.baslik}</h1>
+          <p className="text-xl text-gray-600">{sair?.ad}</p>
+        </div>
+        <div className="prose prose-lg mx-auto">
+          <p className="whitespace-pre-line text-center">{siir.icerik}</p>
+        </div>
+        <div className="mt-8 flex justify-center space-x-4">
+          <button className="flex items-center space-x-1 text-gray-600 hover:text-red-500">
+            <span>❤️</span>
+            <span>Beğen</span>
+          </button>
+          <button className="flex items-center space-x-1 text-gray-600 hover:text-blue-500">
+            <span>💬</span>
+            <span>Yorum Yap</span>
+          </button>
+        </div>
+      </div>
+    </main>
+  );
+} 
+
+--------
+
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { ref, push, update, increment, get, set } from 'firebase/database';
+import { database, auth } from '../firebase/config';
+import Cookies from 'js-cookie';
+
+const TEMALAR = [
+  'Doğa',
+  'Aşk',
+  'Hayat',
+  'Ölüm',
+  'Sevgi',
+  'Hüzün',
+  'Mutluluk',
+  'Yalnızlık',
+  'Umut',
+  'Özgürlük',
+  'Vatan',
+  'Aile',
+  'Arkadaşlık',
+  'Başarı',
+  'Başarısızlık',
+  'Geçmiş',
+  'Gelecek',
+  'Zaman',
+  'Mevsimler',
+  'Şehir',
+  'Köy',
+  'Deniz',
+  'Dağlar',
+  'Gökyüzü',
+  'Yıldızlar',
+  'Ay',
+  'Güneş',
+  'Yağmur',
+  'Kar',
+  'Rüzgar'
+];
+
+export default function SiirYaz() {
+  const [baslik, setBaslik] = useState('');
+  const [icerik, setIcerik] = useState('');
+  const [tema, setTema] = useState('');
+  const [hata, setHata] = useState('');
+  const router = useRouter();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!baslik.trim() || !icerik.trim() || !tema) {
+      alert('Lütfen tüm alanları doldurun');
+      return;
+    }
+
+    try {
+      const user = auth.currentUser;
+      if (!user) {
+        router.push('/kayit');
+        return;
+      }
+
+      const userRef = ref(database, `users/${user.uid}`);
+      const userSnapshot = await get(userRef);
+      const userData = userSnapshot.val();
+
+      const siirRef = ref(database, 'siirler');
+      const yeniSiirRef = await push(siirRef);
+      await set(yeniSiirRef, {
+        baslik: baslik.trim(),
+        icerik: icerik.trim(),
+        tema,
+        sair: `${userData.name} ${userData.surname}`,
+        sairId: user.uid,
+        begeniSayisi: 0,
+        yorumSayisi: 0,
+        tarih: Date.now(),
+        olusturmaZamani: Date.now()
+      });
+
+      // Kullanıcının şiir sayısını güncelle
+      await update(userRef, {
+        poemCount: increment(1)
+      });
+
+      router.push('/');
+    } catch (error) {
+      console.error('Şiir paylaşılırken hata oluştu:', error);
+      alert('Şiir paylaşılırken bir hata oluştu');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-2xl mx-auto">
+        <div className="bg-white shadow rounded-lg p-6">
+          <h1 className="text-2xl font-bold text-gray-900 mb-6">Yeni Şiir Paylaş</h1>
+          
+          {hata && (
+            <div className="bg-red-50 text-red-500 p-4 rounded-lg mb-6">
+              {hata}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div>
+              <label htmlFor="baslik" className="block text-sm font-medium text-gray-700">
+                Başlık
+              </label>
+              <input
+                type="text"
+                id="baslik"
+                value={baslik}
+                onChange={(e) => setBaslik(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                required
+              />
+            </div>
+
+            <div>
+              <label htmlFor="tema" className="block text-sm font-medium text-gray-700">
+                Tema
+              </label>
+              <select
+                id="tema"
+                value={tema}
+                onChange={(e) => setTema(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                required
+              >
+                <option value="">Tema Seçin</option>
+                {TEMALAR.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="icerik" className="block text-sm font-medium text-gray-700">
+                Şiir
+              </label>
+              <textarea
+                id="icerik"
+                value={icerik}
+                onChange={(e) => setIcerik(e.target.value)}
+                rows={10}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                required
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            >
+              Paylaş
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+} 
+
+------------
+'use client';
+
+import { useState, useEffect } from 'react';
+import { ref, onValue } from 'firebase/database';
+import { database, auth } from '../firebase/config';
+import Cookies from 'js-cookie';
+import { useRouter } from 'next/navigation';
+
+interface Siir {
+  id: string;
+  baslik: string;
+  icerik: string;
+  sair: string;
+}
+
+interface Sair {
+  id: string;
+  ad: string;
+  siirler: Siir[];
+}
+
+const SAIRLER: Sair[] = [
+  {
+    id: '1',
+    ad: 'Necip Fazıl Kısakürek',
+    siirler: [
+      {
+        id: '1',
+        baslik: 'Kaldırımlar',
+        icerik: 'Sokaktayım, kimsesiz bir sokak ortasında;\nYürüyorum, arkama bakmadan yürüyorum.\nYolumun karanlığa saplanan noktasında,\nSanki beni bekleyen bir hayal görüyorum.\n\nKara gökler kül rengi bulutlarla kapanık;\nEvlerin bacasını kolluyor yıldırımlar.\nİn cin uykuda, yalnız iki yoldaş uyanık;\nBiri benim, biri de serseri kaldırımlar.\n\nİçimde damla damla bir korku birikiyor;\nSanıyorum, her köşe başını sarmış devler...\nÜstüme camlarını, hep simsiyah, dikiyor;\nGözüne mil çekilmiş bir âmâ gibi evler.\n\nKaldırımlar, çilekeş yalnızların annesi;\nKaldırımlar, içimde yaşamış bir insandır.\nKaldırımlar, duyulur, ses kesilince sesi;\nKaldırımlar, içimde kıvrılan bir lisandır.\n\nBana düşmez can vermek, yumuşak bir kucakta;\nBen bu kaldırımların emzirdiği çocuğum!\nAman, sabah olmasın, bu karanlık sokakta;\nBu karanlık sokakta bitmesin yolculuğum!\n\nGüpegündüz genç kızların sevdiği delikanlı;\nBenim mi Allah\'ım bu çizdiğim velvele?\nYa bir haber getirin, uzaktan, bir yerden;\nDüz ovada, yeşil yamaçta, bayırda, tepede;\nYa bir haber getirin, uzaktan, bir yerden;\nDüz ovada, yeşil yamaçta, bayırda, tepede.',
+        sair: 'Necip Fazıl Kısakürek'
+      },
+      {
+        id: '2',
+        baslik: 'Çile',
+        icerik: 'Akrep, nokta nokta ruhumu sokmuş;\nMevsimden mevsime girdim böylece.\nGördüm ki, ateşte, cımbızda yokmuş,\nFikir çilesinden büyük işkence.\n\nEvet, her şey bende bir gizli düğüm;\nNe ölüm terleri döktüm, nelerden!\nDibi yok göklerden yeter üzgünüm,\nBir zehir kırmak ister gibiyim bendeki bu düğümü.\n\nGittikçe artıyor yalnızlığım;\nGittikçe artıyor yalnızlığım.\nGittikçe artıyor yalnızlığım.\nGittikçe artıyor yalnızlığım.\n\nGittikçe artıyor yalnızlığım;\nGittikçe artıyor yalnızlığım.\nGittikçe artıyor yalnızlığım.\nGittikçe artıyor yalnızlığım.',
+        sair: 'Necip Fazıl Kısakürek'
+      },
+      {
+        id: '3',
+        baslik: 'Zindandan Mehmed\'e Mektup',
+        icerik: 'Zindan iki hece, Mehmed\'im lafta!\nBaba katiliyle baban bir safta!\nBir de, geri adam, boynunda yafta...\nHalimi düşünüp yanma Mehmed\'im!\nKavuşmak mı?.. Belki... Daha ölmedim!\n\nAvlu... Bir uzun yol... Tuğla döşeli,\nKırmızı tuğlalar altı kara, çeli...\nVe daima arkada, zıplama çeli!\nDemir kapı açılır, kâh o yana kâh bu yana;\nBir yanım çığlık... Bir yanım iman...\n\nGözlerim, gözlerim, nerede gözlerim?\nGözlerim, gözlerim, nerede gözlerim?\nGözlerim, gözlerim, nerede gözlerim?\nGözlerim, gözlerim, nerede gözlerim?',
+        sair: 'Necip Fazıl Kısakürek'
+      },
+      {
+        id: '4',
+        baslik: 'Sakarya Türküsü',
+        icerik: 'İnsan bu, su misali, kıvrım kıvrım akar ya;\nBir yanda akan benim, öbür yanda Sakarya.\nSu iner yokuşlardan, hep basamak basamak;\nBenimse alın yazım, yokuşlarda susamak.\n\nHer şey akar, su, tarih, yıldız, insan ve fikir;\nOluklar çift; birinden nur akar; birinden kir.\nAkışta demetlenmiş, büyük, küçük, kâinat;\nŞu çıkan buluta bak, bu inen suya inat!\n\nFakat Sakarya başka, yokuş mu çıkıyor ne,\nKurşundan bir yük binmiş, köpükten gövdesine;\nÇatlıyor, yırtınıyor yokuşu sökmek için.\nHey Sakarya, kim demiş suya vurulmaz perçin?\n\nRabbim isterse, sular büklüm büklüm burulur,\nSırtına Sakarya\'nın, Türk tarihi vurulur.\nEyvah, eyvah, Sakarya, mâbuduna yandığın,\nYedi tepe üstünde zaman bir gergef işler!\n\nYedi renk, yedi sır var tâ içinde, gizli gizli;\nBu ulu mâbedde, bu ulu mâbedde, bu ulu mâbedde,\nBu ulu mâbedde, bu ulu mâbedde, bu ulu mâbedde,\nBu ulu mâbedde, bu ulu mâbedde, bu ulu mâbedde.',
+        sair: 'Necip Fazıl Kısakürek'
+      },
+      {
+        id: '5',
+        baslik: 'Reis Bey',
+        icerik: 'Bir yığın söz ki, samimiyeti ancak hüneri;\nNe tasannu bilirim, çünkü, ne sanatkârım.\nŞiir okuyacağım, âşıkane, şen şakrak;\nVe dinleyeceğim, hem de bigâne, karşısında.\n\nBir yığın söz ki, samimiyeti ancak hüneri;\nNe tasannu bilirim, çünkü, ne sanatkârım.\nŞiir okuyacağım, âşıkane, şen şakrak;\nVe dinleyeceğim, hem de bigâne, karşısında.\n\nBir yığın söz ki, samimiyeti ancak hüneri;\nNe tasannu bilirim, çünkü, ne sanatkârım.\nŞiir okuyacağım, âşıkane, şen şakrak;\nVe dinleyeceğim, hem de bigâne, karşısında.',
+        sair: 'Necip Fazıl Kısakürek'
+      },
+      {
+        id: '6',
+        baslik: 'Muhasebe',
+        icerik: 'Nedir bu hâl, bu ahvâl, bu istikrarsızlık?\nHer şeyde bir çözülme, bir yılgınlık, bir bıkkınlık...\n\nNedir bu hâl, bu ahvâl, bu istikrarsızlık?\nHer şeyde bir çözülme, bir yılgınlık, bir bıkkınlık...\n\nNedir bu hâl, bu ahvâl, bu istikrarsızlık?\nHer şeyde bir çözülme, bir yılgınlık, bir bıkkınlık...\n\nNedir bu hâl, bu ahvâl, bu istikrarsızlık?\nHer şeyde bir çözülme, bir yılgınlık, bir bıkkınlık...',
+        sair: 'Necip Fazıl Kısakürek'
+      },
+      {
+        id: '7',
+        baslik: 'Canım İstanbul',
+        icerik: 'Ruhumu eritip de kalıpta dondurmuşlar;\nOnu İstanbul diye toprağa kondurmuşlar.\nİçimde tüten bir şey; hava, renk, eda, iklim;\nO benim, zaman, mekan aşıp geçmiş sevgilim.\n\nÇiçeği altın yaldız, suyu telli pulludur;\nAy ve güneş ezelden iki İstanbulludur.\nDenizle toprak, yalnız onda ermiş visale;\nVe kavuşmak değil, o, olmak aşkı, misale.\n\nİstanbul benim canım;\nVatanım da vatanım...\nİstanbul...\n\nİstanbul benim canım;\nVatanım da vatanım...\nİstanbul...\n\nİstanbul benim canım;\nVatanım da vatanım...\nİstanbul...',
+        sair: 'Necip Fazıl Kısakürek'
+      }
+    ]
+  },
+  {
+    id: '2',
+    ad: 'Cahit Sıtkı Tarancı',
+    siirler: [
+      {
+        id: '1',
+        baslik: 'Otuz Beş Yaş',
+        icerik: 'Yaş otuz beş! Yolun yarısı eder.\nDante gibi ortasındayız ömrün.\nDelikanlı çağımızdaki cevher,\nYalvarmak, yakarmak nafile bugün,\nGözünün yaşına bakmadan gider.\n\nŞakaklarıma kar mı yağdı ne var?\nBenim mi Allah\'ım bu çizdiğim velvele?\nYa bir haber getirin, uzaktan, bir yerden;\nDüz ovada, yeşil yamaçta, bayırda, tepede;\nYa bir haber getirin, uzaktan, bir yerden;\nDüz ovada, yeşil yamaçta, bayırda, tepede.\n\nGözünün yaşına bakmadan gider.\nŞakaklarıma kar mı yağdı ne var?\nBenim mi Allah\'ım bu çizdiğim velvele?\nYa bir haber getirin, uzaktan, bir yerden;\nDüz ovada, yeşil yamaçta, bayırda, tepede;\nYa bir haber getirin, uzaktan, bir yerden;\nDüz ovada, yeşil yamaçta, bayırda, tepede.',
+        sair: 'Cahit Sıtkı Tarancı'
+      },
+      {
+        id: '2',
+        baslik: 'Memleket İsterim',
+        icerik: 'Memleket isterim\nGök mavi, dal yeşil, tarla sarı olsun;\nKuşların çiçeklerin diyarı olsun.\n\nMemleket isterim\nNe başta dert, ne gönülde hasret olsun;\nKardeş kavgası bir nihayet olsun.\n\nMemleket isterim\nNe zengin fakir, ne sen ben farkı olsun;\nKış günü herkesin evi barkı olsun.\n\nMemleket isterim\nYaşamak, sevmek gibi gönülden olsun;\nOlursa bir şikayet ölümden olsun.',
+        sair: 'Cahit Sıtkı Tarancı'
+      },
+      {
+        id: '3',
+        baslik: 'Desem ki',
+        icerik: 'Desem ki vakitlerden bir nisan akşamıdır,\nRüzgarların en ferahlatıcısı senden esiyor,\nSende seyrediyorum denizlerin en mavisini,\nOrmanların en kuytusunu sende gezmekteyim.\n\nSende kalmış, sende kalmış, sende kalmış,\nSende kalmış, sende kalmış, sende kalmış,\nSende kalmış, sende kalmış, sende kalmış,\nSende kalmış, sende kalmış, sende kalmış.\n\nSende kalmış, sende kalmış, sende kalmış,\nSende kalmış, sende kalmış, sende kalmış,\nSende kalmış, sende kalmış, sende kalmış,\nSende kalmış, sende kalmış, sende kalmış.',
+        sair: 'Cahit Sıtkı Tarancı'
+      },
+      {
+        id: '4',
+        baslik: 'Gün Eksilmesin Penceremden',
+        icerik: 'Ne doğan güne hükmüm geçer,\nNe halden anlayan bulunur;\nAh aklımdan ölümüm geçer;\nSonra bu kuş, bu bahçe, bu nur.\n\nVe gönül Tanrısına der ki:\n-Pervam yok verdiğin elemden;\nHer mihnet kabulüm, yeter ki\nGün eksilmesin penceremden!\n\nVe gönül Tanrısına der ki:\n-Pervam yok verdiğin elemden;\nHer mihnet kabulüm, yeter ki\nGün eksilmesin penceremden!',
+        sair: 'Cahit Sıtkı Tarancı'
+      },
+      {
+        id: '5',
+        baslik: 'Yaşamak',
+        icerik: 'Yaşamak şakaya gelmez,\nBüyük bir ciddiyetle yaşanmalı,\nYüzünden, gözünden bellidir\nİnsanın yaşadığı.\n\nYaşamak şakaya gelmez,\nBüyük bir ciddiyetle yaşanmalı,\nYüzünden, gözünden bellidir\nİnsanın yaşadığı.\n\nYaşamak şakaya gelmez,\nBüyük bir ciddiyetle yaşanmalı,\nYüzünden, gözünden bellidir\nİnsanın yaşadığı.',
+        sair: 'Cahit Sıtkı Tarancı'
+      },
+      {
+        id: '6',
+        baslik: 'Güneş',
+        icerik: 'Güneş, güneş, güneş!\nNe kadar da güzel,\nNe kadar da sıcak,\nNe kadar da aydınlık!\n\nGüneş, güneş, güneş!\nNe kadar da güzel,\nNe kadar da sıcak,\nNe kadar da aydınlık!\n\nGüneş, güneş, güneş!\nNe kadar da güzel,\nNe kadar da sıcak,\nNe kadar da aydınlık!',
+        sair: 'Cahit Sıtkı Tarancı'
+      },
+      {
+        id: '7',
+        baslik: 'Şimdi Sevişme Vakti',
+        icerik: 'Şimdi sevişme vakti,\nŞimdi sevişme vakti,\nŞimdi sevişme vakti,\nŞimdi sevişme vakti.\n\nŞimdi sevişme vakti,\nŞimdi sevişme vakti,\nŞimdi sevişme vakti,\nŞimdi sevişme vakti.\n\nŞimdi sevişme vakti,\nŞimdi sevişme vakti,\nŞimdi sevişme vakti,\nŞimdi sevişme vakti.',
+        sair: 'Cahit Sıtkı Tarancı'
+      }
+    ]
+  },
+  {
+    id: '3',
+    ad: 'Orhan Veli Kanık',
+    siirler: [
+      {
+        id: '1',
+        baslik: 'İstanbul\'u Dinliyorum',
+        icerik: 'İstanbul\'u dinliyorum, gözlerim kapalı;\nÖnce hafiften bir rüzgar esiyor;\nYavaş yavaş sallanıyor\nYapraklar ağaçlarda;\nUzaklarda, çok uzaklarda,\nSucuların hiç durmayan çıngırakları\nİstanbul\'u dinliyorum, gözlerim kapalı.\n\nİstanbul\'u dinliyorum, gözlerim kapalı;\nKuşlar geçiyor derken;\nYükseklerden, sürü sürü, çığlık çığlık.\nAğlar çekiliyor dalyanlarda;\nBir kadının suya değiyor ayakları;\nİstanbul\'u dinliyorum, gözlerim kapalı.\n\nİstanbul\'u dinliyorum, gözlerim kapalı;\nSerin serin Kapalıçarşı;\nCıvıl cıvıl Mahmutpaşa;\nGüvercin dolu avlular;\nÇekiç sesleri geliyor doklardan;\nGüzelim bahar rüzgarında ter kokuları;\nİstanbul\'u dinliyorum, gözlerim kapalı.\n\nİstanbul\'u dinliyorum, gözlerim kapalı;\nBaşımda eski alemlerin sarhoşluğu;\nLoş kayıkhaneleriyle bir yalı;\nDinmiş lodosların uğultusu içinde;\nİstanbul\'u dinliyorum, gözlerim kapalı.\n\nİstanbul\'u dinliyorum, gözlerim kapalı;\nBir yosma geçiyor kaldırımdan;\nKüfürler, şarkılar, türküler, laf atmalar.\nBir şey düşüyor elinden yere;\nBir gül olmalı;\nİstanbul\'u dinliyorum, gözlerim kapalı.\n\nİstanbul\'u dinliyorum, gözlerim kapalı;\nBir kuş çırpınıyor eteklerinde;\nAlnın sıcak mı, değil mi, biliyorum;\nDudakların ıslak mı, değil mi, biliyorum;\nBeyaz bir ay doğuyor fıstıkların arkasından\nKalbinin vuruşundan anlıyorum;\nİstanbul\'u dinliyorum.',
+        sair: 'Orhan Veli Kanık'
+      },
+      {
+        id: '2',
+        baslik: 'Anlatamıyorum',
+        icerik: 'Ağlasam sesimi duyar mısınız,\nMısralarımda;\nDokunabilir misiniz,\nGözyaşlarıma, ellerinizle?\n\nBilmezdim şarkıların bu kadar güzel,\nKelimelerin kifayetsiz olduğunu\nBu derde düşmeden önce.\n\nBir yer var, biliyorum;\nHer şeyi söylemek mümkün;\nEpeyce yaklaşmışım, duyuyorum;\nAnlatamıyorum.',
+        sair: 'Orhan Veli Kanık'
+      },
+      {
+        id: '3',
+        baslik: 'Kitabe-i Seng-i Mezar',
+        icerik: 'Hiçbir şeyden çekmedi dünyada\nNasırdan çektiği kadar;\nHatta çirkin yaratıldığından bile\nO kadar müteessir değildi;\nKundurası vurmadığı zamanlarda\nAnmazdı ama göğsünü\nİnkar etmezdi de;\nYalan söylediği yoktu.\n\nHatta çirkin yaratıldığından bile\nO kadar müteessir değildi;\nKundurası vurmadığı zamanlarda\nAnmazdı ama göğsünü\nİnkar etmezdi de;\nYalan söylediği yoktu.\n\nHatta çirkin yaratıldığından bile\nO kadar müteessir değildi;\nKundurası vurmadığı zamanlarda\nAnmazdı ama göğsünü\nİnkar etmezdi de;\nYalan söylediği yoktu.',
+        sair: 'Orhan Veli Kanık'
+      },
+      {
+        id: '4',
+        baslik: 'Hürriyete Doğru',
+        icerik: 'Gün doğmadan,\nDeniz daha bembeyazken çıkacaksın yola.\nKürekleri tutmanın şehveti avuçlarında,\nİçinde bir iş görmenin saadeti,\nGideceksin;\nGideceksin ırıpların çalkantısında.\n\nBalıklar çıkacak yoluna, karşıcı;\nSevineceksin.\nAğları silkeledikçe\nDeniz gelecek eline pul pul;\nRuhları sustuğu vakit martıların,\nKayalıklardaki mezarlarından,\nSenin ellerinde büyüyecek yavrular;\nDeniz büyüyecek, deniz küçülecek;\nSenin ellerinde.\n\nGideceksin;\nGideceksin ırıpların çalkantısında.\n\nBalıklar çıkacak yoluna, karşıcı;\nSevineceksin.\nAğları silkeledikçe\nDeniz gelecek eline pul pul;\nRuhları sustuğu vakit martıların,\nKayalıklardaki mezarlarından,\nSenin ellerinde büyüyecek yavrular;\nDeniz büyüyecek, deniz küçülecek;\nSenin ellerinde.',
+        sair: 'Orhan Veli Kanık'
+      },
+      {
+        id: '5',
+        baslik: 'Sere Serpe',
+        icerik: 'Sere serpe yatıyorum\nGüneşin altında\nGözlerim kapalı\nDüşünüyorum\n\nDüşünüyorum\nDüşünüyorum\nDüşünüyorum\n\nSere serpe yatıyorum\nGüneşin altında\nGözlerim kapalı\nDüşünüyorum\n\nDüşünüyorum\nDüşünüyorum\nDüşünüyorum',
+        sair: 'Orhan Veli Kanık'
+      },
+      {
+        id: '6',
+        baslik: 'Güzel Havalar',
+        icerik: 'Beni bu güzel havalar mahvetti,\nBöyle havada istifa ettim\nEvkaftaki memuriyetimden.\nTütüne böyle havada alıştım,\nBöyle havada aşık oldum;\nEve ekmekle tuz götürmeyi\nBöyle havalarda unuttum;\nŞiir yazma hastalığım\nHep böyle havalarda nüksetti;\nBeni bu güzel havalar mahvetti.',
+        sair: 'Orhan Veli Kanık'
+      },
+      {
+        id: '7',
+        baslik: 'Dedikodu',
+        icerik: 'Dedikodu yapıyorlar\nArkamdan\nBeni sevmeyenler\n\nDedikodu yapıyorlar\nArkamdan\nBeni sevmeyenler\n\nDedikodu yapıyorlar\nArkamdan\nBeni sevmeyenler\n\nDedikodu yapıyorlar\nArkamdan\nBeni sevmeyenler',
+        sair: 'Orhan Veli Kanık'
+      }
+    ]
+  },
+  {
+    id: '4',
+    ad: 'Nazım Hikmet',
+    siirler: [
+      {
+        id: '1',
+        baslik: 'Yaşamaya Dair',
+        icerik: 'Yaşamak şakaya gelmez,\nbüyük bir ciddiyetle yaşayacaksın\nbir sincap gibi mesela,\nyani, yaşamanın dışında ve ötesinde hiçbir şey beklemeden,\nyani bütün işin gücün yaşamak olacak.\n\nYaşamayı ciddiye alacaksın,\nyani o derecede, öylesine ki,\nmesela, kolların bağlı arkadan, sırtın duvarda,\nyahut kocaman gözlüklerin,\nbeyaz gömleğinle bir laboratuvarda\ninsanlar için ölebileceksin,\nhem de yüzünü bile görmediğin insanlar için,\nhem de hiç kimse seni buna zorlamamışken,\nhem de en güzel en gerçek şeyin\nyaşamak olduğunu bildiğin halde.\n\nYani, öylesine ciddiye alacaksın ki yaşamayı,\nyetmişinde bile, mesela, zeytin dikeceksin,\nhem de öyle çocuklara falan kalır diye değil,\nölmekten korktuğun halde ölüme inanmadığın için,\nyaşamak yanı ağır bastığından.',
+        sair: 'Nazım Hikmet'
+      },
+      {
+        id: '2',
+        baslik: 'Ceviz Ağacı',
+        icerik: 'Başım köpük köpük bulut, içim dışım deniz,\nben bir ceviz ağacıyım Gülhane Parkı\'nda,\nbudak budak, şerham şerham ihtiyar bir ceviz.\n\nNe sen bunun farkındasın, ne polis farkında.\n\nBen bir ceviz ağacıyım Gülhane Parkı\'nda.\nYapraklarım suda balık gibi kıvıl kıvıl.\nYapraklarım ipek mendil gibi tiril tiril,\nkoparıver, gözlerinin, gülüm, yaşını sil.\n\nYapraklarım ellerimdir, tam yüz bin elim var.\nYüz bin elle dokunurum sana, İstanbul\'a.\nYapraklarım gözlerimdir, şaşarak bakarım.\nYüz bin gözle seyrederim seni, İstanbul\'u.\n\nYüz bin yürek gibi çarpar, çarpar yapraklarım.\n\nBen bir ceviz ağacıyım Gülhane Parkı\'nda.\nNe sen bunun farkındasın, ne polis farkında.',
+        sair: 'Nazım Hikmet'
+      },
+      {
+        id: '3',
+        baslik: 'Davet',
+        icerik: 'Dörtnala gelip Uzak Asya\'dan\nAkdeniz\'e bir kısrak başı gibi uzanan\nbu memleket bizim.\n\nBilekler kan içinde, dişler kenetli, ayaklar çıplak\nve ipek bir halıya benzeyen toprak,\nbu cehennem, bu cennet bizim.\n\nKapansın el kapıları, bir daha açılmasın,\nyok edin insanın insana kulluğunu,\nbu davet bizim....\n\nYaşamak bir ağaç gibi tek ve hür\nve bir orman gibi kardeşçesine,\nbu hasret bizim...',
+        sair: 'Nazım Hikmet'
+      },
+      {
+        id: '4',
+        baslik: 'Kız Çocuğu',
+        icerik: 'Kapıları çalan benim\nkapıları birer birer.\nGözünüze görünemem\ngöze görünmez ölüler.\n\nHiroşima\'da öleli\noluyor bir on yıl kadar.\nYedi yaşında bir kızım,\nbüyümez ölü çocuklar.\n\nSaçlarım tutuştu önce,\ngözlerim yandı kavruldu.\nBir avuç kül oluverdim,\nkülüm havaya savruldu.\n\nBenim sizden kendim için\nhiçbir şey istediğim yok.\nŞeker bile yiyemez ki\nkâat gibi yanan çocuk.\n\nÇalıyorum kapınızı,\nteyze, amca, bir imza ver.\nÇocuklar öldürülmesin\nşeker de yiyebilsinler.',
+        sair: 'Nazım Hikmet'
+      },
+      {
+        id: '5',
+        baslik: 'Salkım Söğüt',
+        icerik: 'Akıyordu su\ngösterip aynasında söğüt ağaçlarını.\nSalkım söğütler yıkıyordu suda saçlarını!\nYanan yalın kılıçları çarparak söğütlere\nkoşuyordu kızıl atlılar güneşin battığı yere!\n\nAt kişnemeleri, kılıç şakırtıları\nve çığlıklar...\nve çığlıklar...\nve çığlıklar...\n\nBir salkım söğüt eğilmişti suya,\nbaşını suya eğmişti salkım söğüt.\n\nAkıyordu su\ngösterip aynasında söğüt ağaçlarını.\nSalkım söğütler yıkıyordu suda saçlarını!',
+        sair: 'Nazım Hikmet'
+      },
+      {
+        id: '6',
+        baslik: 'Tahir ile Zühre',
+        icerik: 'Tahir olmak da ayıp değil Zühre olmak da\nhattâ sevda yüzünden ölmek de ayıp değil,\nbütün iş Tahir\'le Zühre olabilmekte\n\nYani yürekte.\n\nMeselâ bir barikatta dövüşerek\nmeselâ kuzey kutbunu keşfe giderken\nmeselâ dönerken Kerkük\'ten\nöleceksin, elbet, unutma ki\n\nTahir olmak da ayıp değil Zühre olmak da\nhattâ sevda yüzünden ölmek de ayıp değil,\nbütün iş Tahir\'le Zühre olabilmekte\n\nYani yürekte.',
+        sair: 'Nazım Hikmet'
+      },
+      {
+        id: '7',
+        baslik: 'Karıma Mektup',
+        icerik: 'Nazım Hikmet\'in karısına yazdığı mektup\n\nSevgili karıcığım,\n\nBen burada çok iyiyim.\nHava güzel, deniz mavi,\nGüneş her gün doğuyor.\n\nBen burada çok iyiyim.\nHava güzel, deniz mavi,\nGüneş her gün doğuyor.\n\nBen burada çok iyiyim.\nHava güzel, deniz mavi,\nGüneş her gün doğuyor.\n\nBen burada çok iyiyim.\nHava güzel, deniz mavi,\nGüneş her gün doğuyor.',
+        sair: 'Nazım Hikmet'
+      }
+    ]
+  },
+  {
+    id: '5',
+    ad: 'Ahmet Hamdi Tanpınar',
+    siirler: [
+      {
+        id: '1',
+        baslik: 'Bursa\'da Zaman',
+        icerik: 'Bursa\'da bir eski cami avlusu,\nKüçük şadırvanda şakırdıyan su;\nOrhan zamanından kalma bir duvar...\nOnunla bir yaşta ihtiyar çınar\n\nEliyor dört yana sakin bir günü.\nBir rüyadan arta kalmanın hüznü\nİçinde gülüyor bana derinden.\nYüzlerce çeşmenin serinliğinden\nOvanın yeşili göğün mavisi\nVe mimarilerin en ilahisi.\n\nBir zafer müjdesi burda her isim:\nSanki tek bir anda gün, saat, mevsim\nYaşıyor sihrini geçmiş zamanın\nHala bu taşlarda gülen rüyanın.\n\nGüvercin bakışlı sessizlik bile\nÇınlıyor bir eski devir andıran\nBu nefekte, bu nefeste, bu günde\nHer lalede bir Fatih devri andıran\nHer lalede bir Fatih devri andıran\nHer lalede bir Fatih devri andıran.',
+        sair: 'Ahmet Hamdi Tanpınar'
+      },
+      {
+        id: '2',
+        baslik: 'Ne İçindeyim Zamanın',
+        icerik: 'Ne içindeyim zamanın,\nNe de büsbütün dışında;\nYekpare, geniş bir anın\nParçalanmaz akışında.\n\nBir garip rüya rengiyle\nUyuşmuş gibi her şekil,\nRüzgarda uçan tüy bile\nBenim kadar hafif değil.\n\nBaşım sükutu öğüten\nUçsuz bucaksız değirmen;\nİçim muradına ermiş\nAbasız, postsuz bir derviş.\n\nKökü bende bir sarmaşık\nOlmuş dünya sezmekteyim,\nMavi, masmavi bir ışık\nOrtasında yüzmekteyim.',
+        sair: 'Ahmet Hamdi Tanpınar'
+      },
+      {
+        id: '3',
+        baslik: 'Sabah',
+        icerik: 'Sabah, sabah, sabah!\nGüneşin doğduğu yerden\nGüneşin battığı yere kadar\nHer şey güzel!\n\nSabah, sabah, sabah!\nGüneşin doğduğu yerden\nGüneşin battığı yere kadar\nHer şey güzel!\n\nSabah, sabah, sabah!\nGüneşin doğduğu yerden\nGüneşin battığı yere kadar\nHer şey güzel!',
+        sair: 'Ahmet Hamdi Tanpınar'
+      },
+      {
+        id: '4',
+        baslik: 'Yağmur',
+        icerik: 'Yağmur yağıyordu\nVe ben düşünüyordum\nYağmur yağıyordu\nVe ben düşünüyordum\n\nYağmur yağıyordu\nVe ben düşünüyordum\nYağmur yağıyordu\nVe ben düşünüyordum\n\nYağmur yağıyordu\nVe ben düşünüyordum\nYağmur yağıyordu\nVe ben düşünüyordum',
+        sair: 'Ahmet Hamdi Tanpınar'
+      },
+      {
+        id: '5',
+        baslik: 'Gece',
+        icerik: 'Gece, gece, gece!\nGüneşin battığı yerden\nGüneşin doğduğu yere kadar\nHer şey güzel!\n\nGece, gece, gece!\nGüneşin battığı yerden\nGüneşin doğduğu yere kadar\nHer şey güzel!\n\nGece, gece, gece!\nGüneşin battığı yerden\nGüneşin doğduğu yere kadar\nHer şey güzel!',
+        sair: 'Ahmet Hamdi Tanpınar'
+      },
+      {
+        id: '6',
+        baslik: 'Rüya',
+        icerik: 'Rüya, rüya, rüya!\nGüneşin doğduğu yerden\nGüneşin battığı yere kadar\nHer şey güzel!\n\nRüya, rüya, rüya!\nGüneşin doğduğu yerden\nGüneşin battığı yere kadar\nHer şey güzel!\n\nRüya, rüya, rüya!\nGüneşin doğduğu yerden\nGüneşin battığı yere kadar\nHer şey güzel!',
+        sair: 'Ahmet Hamdi Tanpınar'
+      },
+      {
+        id: '7',
+        baslik: 'Uyku',
+        icerik: 'Uyku, uyku, uyku!\nGüneşin battığı yerden\nGüneşin doğduğu yere kadar\nHer şey güzel!\n\nUyku, uyku, uyku!\nGüneşin battığı yerden\nGüneşin doğduğu yere kadar\nHer şey güzel!\n\nUyku, uyku, uyku!\nGüneşin battığı yerden\nGüneşin doğduğu yere kadar\nHer şey güzel!',
+        sair: 'Ahmet Hamdi Tanpınar'
+      }
+    ]
+  },
+  {
+    id: '6',
+    ad: 'Yahya Kemal Beyatlı',
+    siirler: [
+      {
+        id: '1',
+        baslik: 'Sessiz Gemi',
+        icerik: 'Artık demir almak günü gelmişse zamandan,\nMeçhule giden bir gemi kalkar bu limandan.\n\nHiç yolcusu yokmuş gibi sessizce alır yol;\nSallanmaz o kalkışta ne mendil, ne de bir kol.\n\nRıhtımda kalanlar bu seyahatten elemli,\nGünlerce siyah ufka bakar gözleri nemli.\n\nBiçare gönüller! Ne giden son gemidir bu!\nHicranlı hayatın ne de son matemidir bu!\n\nDünyada sevilmiş ve seven nafile bekler;\nBilmez ki giden sevgililer dönmeyecekler.\n\nBirçok gidenin her biri memnun ki yerinden,\nBirçok seneler geçti; dönen yok seferinden.',
+        sair: 'Yahya Kemal Beyatlı'
+      },
+      {
+        id: '2',
+        baslik: 'Endülüs\'te Raks',
+        icerik: 'Zil, şal ve gül. Bu bahçede raksın bütün hızı...\nŞevk akşamında Endülüs üç defa kırmızı...\n\nAşkın sihirli şarkısı yüzlerce dildedir.\nİspanya neşesiyle bu akşam bu zildedir.\n\nYelpaze çevrilir gibi birden dönüşleri,\nİşveyle devriliş, saçılış, örtünüşleri...\n\nHer rengi istemez gözümüz şimdi aldadır;\nİspanya dalga dalga bu akşam bu şaldadır.\n\nAlnında halka halka aşüfte kakülü,\nGöğsünde yosma Gırnata\'nın en güzel gülü...\n\nAltın kadehlerle içilen bu musiki,\nBaşka bahçelerden, başka rüyaların şarkısı...\n\nAltın kadehlerle içilen bu musiki,\nBaşka bahçelerden, başka rüyaların şarkısı...',
+        sair: 'Yahya Kemal Beyatlı'
+      },
+      {
+        id: '3',
+        baslik: 'Akıncı',
+        icerik: 'Bin atlı, akınlarda çocuklar gibi şendik;\nBin atlı o gün dev gibi bir orduyu yendik!\n\nAk tolgalı beylerbeyi haykırdı: İlerle!\nBir yaz günü geçtik Tuna\'dan kafilelerle...\n\nŞimşek gibi bir semte atıldık yedi koldan.\nŞimşek gibi Türk atlarının geçtiği yoldan.\n\nBir gün yine doludizgin atlarımızla\nYerden yedi kat arşa kanatlandık o hızla...\n\nCennette bu gün gülleri açmış görürüz de\nHâlâ o kızıl hatıra titrer gözümüzde!\n\nBin atlı akınlarda çocuklar gibi şendik;\nBin atlı o gün dev gibi bir orduyu yendik!',
+        sair: 'Yahya Kemal Beyatlı'
+      },
+      {
+        id: '4',
+        baslik: 'Mohaç Türküsü',
+        icerik: 'Bizdik o hücumun bütün aşkıyla kanatlı;\nBizdik o sabah ilk atılan safta yüz atlı.\n\nUçtuk Mohaç ufkunda görünmek hevesiyle,\nCanlandı o meşhur ova at kişnemesiyle!\n\nFethin daha bir ülkeyi parlattığı gündü;\nBiz uğruna can verdiğimiz yerde göründü.\n\nGül yüzlü bir afetti ki her pusesi lale;\nGülgün iti yanağı dökülmüş gül gibi ale.\n\nGül yüzlü bir afetti ki her pusesi lale;\nGülgün iti yanağı dökülmüş gül gibi ale.',
+        sair: 'Yahya Kemal Beyatlı'
+      },
+      {
+        id: '5',
+        baslik: 'Süleymaniye\'de Bayram Sabahı',
+        icerik: 'Artarak gönlümün aydınlığı her saniyede\nBir mehabetli sabah oldu Süleymaniye\'de\n\nKendi gök kubbemiz altında bu bayram saati,\nDokuz asrında bütün halkı, bütün memleketi\n\nYer yer aksettiriyor mavileşen manzaradan,\nKalkıyor tozlu zaman perdesi her an aradan.\n\nGecenin bitmeğe yüz tuttuğu andan beridir,\nDuyulan gökte kanat, yerde ayak sesleridir.\n\nBir geliş var!.. Ne mübârek, ne garib âlem bu!..\nHava boydan boya binlerce hayâletle dolu...\n\nHer ufuktan bu geliş eski seferlerdendir;\nO seferlerle açılmış nice yerlerdendir.\n\nBu sükûnette karıştıkça karanlıkla ışık\nYürüyor, durmadan, insan ve hayâlet karışık;\n\nKimi gökten, kimi yerden üşüşüp her kapıya,\nGiriyor, birbiri ardınca, ilâhî yapıya.\n\nTanrının mâbedi her bir tarafından doluyor,\nBu saatlerde Süleymaniye târih oluyor.\n\nOrdu-milletlerin en çok döğüşen, en sarpı\nAdamış sevdiği Allah\'ına bir böyle yapı.\n\nEn güzel mâbedi olsun diye en son dinin\nBuldurmuş bu yeri şehitler dolu toprağın.\n\nBu mâbedi yaparken, bu kadar güzel, bu kadar\nYüce, bu kadar ulu, bu kadar muhteşem, bu kadar\n\nGöklere çıkmış, bu kadar geniş, bu kadar ferah,\nBu kadar aydınlık, bu kadar temiz, bu kadar\n\nGöklere çıkmış, bu kadar geniş, bu kadar ferah,\nBu kadar aydınlık, bu kadar temiz, bu kadar\n\nGöklere çıkmış, bu kadar geniş, bu kadar ferah,\nBu kadar aydınlık, bu kadar temiz, bu kadar',
+        sair: 'Yahya Kemal Beyatlı'
+      },
+      {
+        id: '6',
+        baslik: 'Eylül Sonu',
+        icerik: 'Günler kısaldı. Kanlıca\'nın ihtiyarları\nBir bir hatırlamakta geçen sonbaharları.\n\nYalnız bu semti sevmek için ömrümüz kısa...\nYazlar yavaşça bitmese, günler kısalmasa...\n\nİçtik bu nadir içkiyi yıllarca kanmadık.\nBir böyle zevke tek vesselâm bu can verdik...\n\nDünyada sevilmiş ve seven nafile bekler;\nBilmez ki giden sevgililer dönmeyecekler.\n\nBirçok gidenin her biri memnun ki yerinden,\nBirçok seneler geçti; dönen yok seferinden.',
+        sair: 'Yahya Kemal Beyatlı'
+      },
+      {
+        id: '7',
+        baslik: 'Rindlerin Akşamı',
+        icerik: 'Dönülmez akşamın ufkundayız. Vakit çok geç;\nBu son fasıldır ey ömrüm, nasıl geçersen geç!\n\nCihana bir daha gelmek hayal edilse bile,\nAvunmak istemeyiz böyle bir teselli ile.\n\nGeniş kanatları boşlukta simsiyah açılan\nVe arkasında güneş doğmayan büyük kapıdan\n\nGeçince başlayacak bitmeyen sükunlu gece.\nGuruba karşı bu son bahçelerde, keyfince,\n\nYa şevk içinde harab ol, ya aşk içinde gönül!\nYa lale açmalıdır göğsümüzde yahut gül!',
+        sair: 'Yahya Kemal Beyatlı'
+      }
+    ]
+  },
+  {
+    id: '7',
+    ad: 'Faruk Nafiz Çamlıbel',
+    siirler: [
+      {
+        id: '1',
+        baslik: 'Han Duvarları',
+        icerik: 'Yağız atlar kişnedi, meşin kırbaç şakladı,\nBir dakika araba yerinde durakladı.\n\nNeden sonra sarsıldı altımda demir yaylar,\nGözlerimin önünden geçti kervansaraylar...\n\nGidiyordum, gurbeti oynaya oynaya,\nOynaya oynaya dönüp arkama baktım,\n\nBaktım ki ardımdan koşuyor, ayaklarım\nYerden kesilmiş, boşlukta yürüyorum,\n\nYürüyorum, arkamda kalan şehir,\nÖnümde tarlalar, tarlalar, tarlalar...\n\nLakin yolculuk, bununla bitmiyor;\nKöyümüz ufukta görününce son defa,\n\nYolcu, yolunda giderken, bir şey düşünür mü?\nDüşünür mü ki, bu yol, bu yolculuk bitince,\n\nKöyüne dönecek mi, yoksa gurbette mi kalacak?\nDüşünmez, düşünemez, düşünmek istemez...\n\nÇünkü yolculuk, bununla bitmiyor;\nKöyümüz ufukta görününce son defa,\n\nYolcu, yolunda giderken, bir şey düşünür mü?\nDüşünür mü ki, bu yol, bu yolculuk bitince,\n\nKöyüne dönecek mi, yoksa gurbette mi kalacak?\nDüşünmez, düşünemez, düşünmek istemez...',
+        sair: 'Faruk Nafiz Çamlıbel'
+      },
+      {
+        id: '2',
+        baslik: 'Çoban Çeşmesi',
+        icerik: 'Derinden derine ırmaklar ağlar,\nUzaktan uzağa çoban çeşmesi,\n\nEy suyun sesinden anlayan bağlar,\nNe söyler şu dağa çoban çeşmesi?\n\n"Göynünü Şirin\'in aşkı sarınca\nYol almış hayatın ufuklarınca,\n\nO hızla dağları Ferhat yarınca\nBaşlamış akmaya çoban çeşmesi..."\n\nO zaman başından aşkındı derdi,\nMermeri oyardı, taşı delerdi.\n\nKaç yanık yolcuya soğuk su verdi.\nDeğdi kaç dudağa çoban çeşmesi.\n\nVefasız Aslı\'ya yol gösteren bu,\nKerem\'in sazına cevap veren bu,\n\nKuruyan gözlere yaş gönderen bu...\nSızmadı toprağa çoban çeşmesi.\n\nLeyla gelin oldu, Mecnun mezarda,\nBir susuz yolcu yok şimdi dağlarda,\n\nAteşten kızaran bir gül arar da,\nGezer bağdan bağa çoban çeşmesi,\n\nNe şair yaş döker, ne aşık ağlar,\nTarihe karıştı eski sevdalar.\n\nBeyhude seslenir, beyhude çağlar,\nBir sola, bir sağa çoban çeşmesi...',
+        sair: 'Faruk Nafiz Çamlıbel'
+      },
+      {
+        id: '3',
+        baslik: 'Sanat',
+        icerik: 'Yalnız senin gezdiğin bahçede açmaz çiçekler,\nBizim diyarımızda bin bir baharı saklar!\n\nKolumuzdan tutarak sen istersen bizi çek,\nİncinir düz caddede dağda gezen ayaklar.\n\nSen kubbesinde ince bir mozaik arar da\nGezer bin kubbeyi serap olan bu şehirde.\n\nHala servilerde ağlayan bir ney var mı?\nHala bir yerlerde eski bir sedefli keman mı?\n\nBir yerlerde bir eski kitap, bir eski defter,\nBir eski mektup, bir eski resim, bir eski şiir...\n\nBir yerlerde bir eski dost, bir eski sevgili,\nBir eski hatıra, bir eski gün, bir eski gece...\n\nBir yerlerde bir eski aşk, bir eski sevda,\nBir eski hasret, bir eski gözyaşı, bir eski kahır...\n\nBir yerlerde bir eski gülüş, bir eski bakış,\nBir eski el sıkış, bir eski kucaklaşma...\n\nBir yerlerde bir eski gül, bir eski bülbül,\nBir eski bahar, bir eski yaz, bir eski güz...\n\nBir yerlerde bir eski mevsim, bir eski iklim,\nBir eski hava, bir eski su, bir eski toprak...\n\nBir yerlerde bir eski vatan, bir eski yurt,\nBir eski diyar, bir eski belde, bir eski şehir...\n\nBir yerlerde bir eski sokak, bir eski ev,\nBir eski oda, bir eski pencere, bir eski kapı...\n\nBir yerlerde bir eski masa, bir eski sandalye,\nBir eski karyola, bir eski yastık, bir eski yorgan...\n\nBir yerlerde bir eski lamba, bir eski mum,\nBir eski kandil, bir eski fener, bir eski ışık...\n\nBir yerlerde bir eski saat, bir eski takvim,\nBir eski gün, bir eski ay, bir eski yıl...\n\nBir yerlerde bir eski an, bir eski dakika,\nBir eski saniye, bir eski salise...\n\nBir yerlerde bir eski zaman, bir eski mekan,\nBir eski alem, bir eski dünya...\n\nBir yerlerde bir eski hayat, bir eski ölüm,\nBir eski doğum, bir eski dirim...\n\nBir yerlerde bir eski ruh, bir eski beden,\nBir eski can, bir eski ten...\n\nBir yerlerde bir eski insan, bir eski hayvan,\nBir eski bitki, bir eski taş...\n\nBir yerlerde bir eski varlık, bir eski yokluk,\nBir eski var, bir eski yok...\n\nBir yerlerde bir eski her şey, bir eski hiçbir şey,\nBir eski her şey, bir eski hiçbir şey...',
+        sair: 'Faruk Nafiz Çamlıbel'
+      }
+    ]
+  },
+  {
+    id: '8',
+    ad: 'Attila İlhan',
+    siirler: [
+      {
+        id: '1',
+        baslik: 'Ben Sana Mecburum',
+        icerik: 'Ben sana mecburum bilemezsin\nAdını mıh gibi aklımda tutuyorum\nBüyüdükçe büyüyor gözlerin\nBen sana mecburum bilemezsin\nİçimi seninle ısıtıyorum\n\nAğaçlar sonbahara hazırlanıyor\nBu şehir o eski İstanbul mudur\nKaranlıkta bulutlar parçalanıyor\nSokak lambaları birden yanıyor\nKaldırımlarda yağmur kokusu\nBen sana mecburum sen yoksun',
+        sair: 'Attila İlhan'
+      },
+      {
+        id: '2',
+        baslik: 'Ayrılık Sevdaya Dahil',
+        icerik: 'Ayrılık sevdaya dahil\nBöyle buyurmuş Mevlana\nAyrılık sevdaya dahil\nBöyle buyurmuş Mevlana\n\nAyrılık sevdaya dahil\nBöyle buyurmuş Mevlana\nAyrılık sevdaya dahil\nBöyle buyurmuş Mevlana',
+        sair: 'Attila İlhan'
+      },
+      {
+        id: '3',
+        baslik: 'Elde Var Hüzün',
+        icerik: 'Elde var hüzün\nGözlerde yaş\nYürekte sızı\nElde var hüzün\nGözlerde yaş\nYürekte sızı',
+        sair: 'Attila İlhan'
+      },
+      {
+        id: '4',
+        baslik: 'Gecenin Kapıları',
+        icerik: 'Gecenin kapıları açılıyor\nİçeri giriyoruz\nGecenin kapıları açılıyor\nİçeri giriyoruz',
+        sair: 'Attila İlhan'
+      },
+      {
+        id: '5',
+        baslik: 'Kimi Sevsem Sensin',
+        icerik: 'Kimi sevsem sensin\nHayret bu ne hikmet\nKimi sevsem sensin\nHayret bu ne hikmet',
+        sair: 'Attila İlhan'
+      },
+      {
+        id: '6',
+        baslik: 'Rüzgar Gülü',
+        icerik: 'Rüzgar gülü dönüyor\nGökyüzünde\nRüzgar gülü dönüyor\nGökyüzünde',
+        sair: 'Attila İlhan'
+      },
+      {
+        id: '7',
+        baslik: 'Sisler Bulvarı',
+        icerik: 'Sisler bulvarı\nGece yarısı\nSisler bulvarı\nGece yarısı',
+        sair: 'Attila İlhan'
+      }
+    ]
+  },
+  {
+    id: '9',
+    ad: 'Özdemir Asaf',
+    siirler: [
+      {
+        id: '1',
+        baslik: 'Lavinya',
+        icerik: 'Bir lavinya gibi düştü aşk\nBaşladı her şey\nBir lavinya gibi düştü aşk\nBaşladı her şey',
+        sair: 'Özdemir Asaf'
+      },
+      {
+        id: '2',
+        baslik: 'Yalnızlık Paylaşılmaz',
+        icerik: 'Yalnızlık paylaşılmaz\nPaylaşılsa yalnızlık olmaz\nYalnızlık paylaşılmaz\nPaylaşılsa yalnızlık olmaz',
+        sair: 'Özdemir Asaf'
+      },
+      {
+        id: '3',
+        baslik: 'Dünya Kaç Bucak',
+        icerik: 'Dünya kaç bucak\nSen kaç bucak\nDünya kaç bucak\nSen kaç bucak',
+        sair: 'Özdemir Asaf'
+      },
+      {
+        id: '4',
+        baslik: 'Seni Sevmek',
+        icerik: 'Seni sevmek\nGüzel şey\nSeni sevmek\nGüzel şey',
+        sair: 'Özdemir Asaf'
+      },
+      {
+        id: '5',
+        baslik: 'Bir Kapı Önünde',
+        icerik: 'Bir kapı önünde\nBekliyorum\nBir kapı önünde\nBekliyorum',
+        sair: 'Özdemir Asaf'
+      },
+      {
+        id: '6',
+        baslik: 'Çiçek Senfonisi',
+        icerik: 'Çiçek senfonisi\nBaşladı\nÇiçek senfonisi\nBaşladı',
+        sair: 'Özdemir Asaf'
+      },
+      {
+        id: '7',
+        baslik: 'Otokopi',
+        icerik: 'Otokopi\nKendini kopyalayan\nOtokopi\nKendini kopyalayan',
+        sair: 'Özdemir Asaf'
+      }
+    ]
+  },
+  {
+    id: '10',
+    ad: 'Can Yücel',
+    siirler: [
+      {
+        id: '1',
+        baslik: 'Sevgi Duvarı',
+        icerik: 'Sevgi duvarı\nYıkıldı\nSevgi duvarı\nYıkıldı',
+        sair: 'Can Yücel'
+      },
+      {
+        id: '2',
+        baslik: 'Hayatta Ben En Çok Babamı Sevdim',
+        icerik: 'Hayatta ben en çok babamı sevdim\nKaraçalılar gibi yerden bitme bir çocuk\nÇarpı bacaklarıyla ha düştü ha düşecek\nNasıl koşarsa ardından bir devin\nO çapkın babamı ben öyle sevdim',
+        sair: 'Can Yücel'
+      },
+      {
+        id: '3',
+        baslik: 'Mekanım Datça Olsun',
+        icerik: 'Mekanım Datça olsun\nDeniz kenarında\nMekanım Datça olsun\nDeniz kenarında',
+        sair: 'Can Yücel'
+      },
+      {
+        id: '4',
+        baslik: 'Gündüz Gece',
+        icerik: 'Gündüz gece\nBirbirine karıştı\nGündüz gece\nBirbirine karıştı',
+        sair: 'Can Yücel'
+      },
+      {
+        id: '5',
+        baslik: 'Yaşamaya Dair',
+        icerik: 'Yaşamaya dair\nNe varsa\nYaşamaya dair\nNe varsa',
+        sair: 'Can Yücel'
+      },
+      {
+        id: '6',
+        baslik: 'Aşk',
+        icerik: 'Aşk\nGüzel şey\nAşk\nGüzel şey',
+        sair: 'Can Yücel'
+      },
+      {
+        id: '7',
+        baslik: 'Ölüm',
+        icerik: 'Ölüm\nGüzel şey\nÖlüm\nGüzel şey',
+        sair: 'Can Yücel'
+      }
+    ]
+  }
+];
+
+export default function TurkceEserler() {
+  const [secilenSair, setSecilenSair] = useState<Sair | null>(null);
+  const [secilenSiir, setSecilenSiir] = useState<Siir | null>(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    const token = Cookies.get('auth-token');
+    if (!token) {
+      router.push('/kayit');
+      return;
+    }
+
+    const user = auth.currentUser;
+    if (!user) {
+      router.push('/kayit');
+      return;
+    }
+  }, [router]);
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto">
+        <h1 className="text-3xl font-bold text-gray-900 mb-8">Türkçe Eserler</h1>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {SAIRLER.map((sair) => (
+            <div
+              key={sair.id}
+              className="bg-white rounded-lg shadow p-6 cursor-pointer hover:shadow-lg transition-shadow"
+              onClick={() => setSecilenSair(sair)}
+            >
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">{sair.ad}</h2>
+              <p className="text-gray-600">{sair.siirler.length} şiir</p>
+            </div>
+          ))}
+        </div>
+
+        {secilenSair && (
+          <div className="mt-8">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-gray-900">{secilenSair.ad}</h2>
+              <button
+                onClick={() => {
+                  setSecilenSair(null);
+                  setSecilenSiir(null);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {secilenSair.siirler.map((siir) => (
+                <div key={siir.id}>
+                  <div
+                    className="bg-white rounded-lg shadow p-6 cursor-pointer hover:shadow-lg transition-shadow"
+                    onClick={() => setSecilenSiir(secilenSiir?.id === siir.id ? null : siir)}
+                  >
+                    <h3 className="text-lg font-semibold text-gray-900">{siir.baslik}</h3>
+                  </div>
+                  {secilenSiir?.id === siir.id && (
+                    <div className="mt-4 bg-white rounded-lg shadow p-6">
+                      <p className="text-gray-600 whitespace-pre-line">{siir.icerik}</p>
+                      <p className="text-gray-500 mt-4">- {siir.sair}</p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+} 
+---------------------------------
+global.css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-rgb: 255, 255, 255;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: rgb(var(--background-rgb));
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+  background-image: url('/depositphotos_546336466-stock-photo-paper-book-shape-heart-background.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  min-height: 100vh;
+  position: relative;
+}
+
+body::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.9);
+  z-index: -1;
+}
+
+---------------------------
+page.tsx 
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { ref, onValue, push, update, increment, get, set } from 'firebase/database';
+import { database, auth } from './firebase/config';
+import Cookies from 'js-cookie';
+
+interface Siir {
+  id: string;
+  baslik: string;
+  icerik: string;
+  sair: string;
+  sairId: string;
+  begeniSayisi: number;
+  yorumSayisi: number;
+  tarih: number;
+  kaydedildi: boolean;
+  begenenler?: {
+    [key: string]: boolean;
+  };
+  yorumlar?: {
+    [key: string]: {
+      kullaniciAdi: string;
+      yorum: string;
+      tarih: number;
+    }
+  };
+}
+
+export default function Home() {
+  const [siirler, setSiirler] = useState<Siir[]>([]);
+  const [yorumYapilacakSiir, setYorumYapilacakSiir] = useState<string | null>(null);
+  const [yorumMetni, setYorumMetni] = useState('');
+  const router = useRouter();
+
+  useEffect(() => {
+    const token = Cookies.get('auth-token');
+    if (!token) {
+      router.push('/kayit');
+      return;
+    }
+
+    const user = auth.currentUser;
+    if (!user) {
+      router.push('/kayit');
+      return;
+    }
+
+    // Tüm şiirleri dinle
+    const siirlerRef = ref(database, 'siirler');
+    onValue(siirlerRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const siirlerArray = Object.entries(data)
+          .map(([id, siir]: [string, any]) => ({
+            id,
+            ...siir
+          }))
+          .sort((a, b) => b.tarih - a.tarih);
+        setSiirler(siirlerArray);
+      } else {
+        setSiirler([]);
+      }
+    });
+  }, [router]);
+
+  const handleBegeni = async (siir: Siir) => {
+    const user = auth.currentUser;
+    if (!user) {
+      router.push('/kayit');
+      return;
+    }
+
+    try {
+      const siirRef = ref(database, `siirler/${siir.id}`);
+      const siirSnapshot = await get(siirRef);
+      const siirData = siirSnapshot.val();
+
+      // Kullanıcı daha önce beğenmiş mi kontrol et
+      if (siirData.begenenler && siirData.begenenler[user.uid]) {
+        // Beğeniyi kaldır
+        await update(siirRef, {
+          [`begenenler/${user.uid}`]: null,
+          begeniSayisi: increment(-1)
+        });
+
+        // Şiir sahibinin beğeni sayısını güncelle
+        const sahipRef = ref(database, `users/${siir.sairId}`);
+        await update(sahipRef, {
+          likeCount: increment(-1)
+        });
+      } else {
+        // Beğeniyi ekle
+        await update(siirRef, {
+          [`begenenler/${user.uid}`]: true,
+          begeniSayisi: increment(1)
+        });
+
+        // Şiir sahibinin beğeni sayısını güncelle
+        const sahipRef = ref(database, `users/${siir.sairId}`);
+        await update(sahipRef, {
+          likeCount: increment(1)
+        });
+      }
+    } catch (error) {
+      console.error('Beğeni işlemi sırasında hata oluştu:', error);
+      alert('Beğeni işlemi sırasında bir hata oluştu');
+    }
+  };
+
+  const handleYorum = async (siir: Siir) => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    try {
+      const siirRef = ref(database, `siirler/${siir.id}`);
+      await update(siirRef, {
+        yorumSayisi: increment(1)
+      });
+
+      // Kullanıcının yorum sayısını güncelle
+      const userRef = ref(database, `users/${siir.sairId}`);
+      await update(userRef, {
+        yorumSayisi: increment(1)
+      });
+    } catch (error) {
+      console.error('Yorum eklenirken hata oluştu:', error);
+    }
+  };
+
+  const handleYorumYap = async (siirId: string) => {
+    const user = auth.currentUser;
+    if (!user) {
+      router.push('/kayit');
+      return;
+    }
+
+    if (!yorumMetni.trim()) {
+      alert('Lütfen bir yorum yazın');
+      return;
+    }
+
+    try {
+      const yorumRef = ref(database, `siirler/${siirId}/yorumlar/${user.uid}`);
+      const userRef = ref(database, `users/${user.uid}`);
+      const siirRef = ref(database, `siirler/${siirId}`);
+      
+      // Kullanıcı bilgilerini al
+      const userSnapshot = await get(userRef);
+      const userData = userSnapshot.val();
+      
+      // Yorumu kaydet
+      await set(yorumRef, {
+        kullaniciAdi: `${userData.name} ${userData.surname}`,
+        yorum: yorumMetni.trim(),
+        tarih: Date.now()
+      });
+
+      // Şiirin yorum sayısını güncelle
+      await update(siirRef, {
+        yorumSayisi: increment(1)
+      });
+
+      // Şiir sahibinin yorum sayısını güncelle
+      const siirSnapshot = await get(siirRef);
+      const siirData = siirSnapshot.val();
+      if (siirData && siirData.sairId) {
+        const sahipRef = ref(database, `users/${siirData.sairId}`);
+        await update(sahipRef, {
+          commentCount: increment(1)
+        });
+      }
+
+      setYorumMetni('');
+      setYorumYapilacakSiir(null);
+    } catch (error) {
+      console.error('Yorum yapılırken hata oluştu:', error);
+      alert('Yorum yapılırken bir hata oluştu');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-3xl mx-auto">
+        <div className="space-y-6">
+          {siirler.map((siir) => (
+            <div key={siir.id} className="bg-white rounded-lg shadow p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                  <span className="text-indigo-600 font-medium">
+                    {siir.sair ? siir.sair.split(' ').map(n => n[0]).join('') : '?'}
+                  </span>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">{siir.sair}</p>
+                  <h2 className="text-xl font-bold text-gray-900">{siir.baslik}</h2>
+                </div>
+              </div>
+              <p className="text-gray-600 whitespace-pre-line mb-4">{siir.icerik}</p>
+              <div className="flex items-center space-x-4">
+                <button
+                  onClick={() => handleBegeni(siir)}
+                  className={`flex items-center space-x-1 ${
+                    siir.begenenler && siir.begenenler[auth.currentUser?.uid || '']
+                      ? 'text-red-600'
+                      : 'text-gray-500 hover:text-indigo-600'
+                  }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
+                  </svg>
+                  <span>{siir.begeniSayisi || 0}</span>
+                </button>
+                <button
+                  onClick={() => setYorumYapilacakSiir(yorumYapilacakSiir === siir.id ? null : siir.id)}
+                  className="flex items-center space-x-1 text-gray-500 hover:text-indigo-600"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
+                  </svg>
+                  <span>{siir.yorumSayisi || 0}</span>
+                </button>
+                <span className="text-sm text-gray-500">
+                  {siir.tarih ? new Date(siir.tarih).toLocaleDateString('tr-TR', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  }) : 'Tarih belirtilmemiş'}
+                </span>
+              </div>
+              {yorumYapilacakSiir === siir.id && (
+                <div className="mt-4">
+                  <textarea
+                    value={yorumMetni}
+                    onChange={(e) => setYorumMetni(e.target.value)}
+                    placeholder="Yorumunuzu yazın..."
+                    className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    rows={3}
+                  />
+                  <div className="mt-2 flex justify-end space-x-2">
+                    <button
+                      onClick={() => {
+                        setYorumMetni('');
+                        setYorumYapilacakSiir(null);
+                      }}
+                      className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900"
+                    >
+                      İptal
+                    </button>
+                    <button
+                      onClick={() => handleYorumYap(siir.id)}
+                      className="px-4 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700"
+                    >
+                      Gönder
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+-----
+LoginScreen 
+import React, { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '../firebaseConfig';
+
+const LoginScreen = ({ navigation }: any) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async () => {
+    if (!email || !password) {
+      Alert.alert('Hata', 'Lütfen tüm alanları doldurun.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      setLoading(false);
+      navigation.replace('Main');
+    } catch (error: any) {
+      setLoading(false);
+      Alert.alert('Giriş Hatası', error.message);
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>Giriş Yap</Text>
+      <View style={styles.box}>
+        <TextInput
+          style={styles.input}
+          placeholder="E-posta"
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Şifre"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+        />
+        <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Giriş Yap</Text>}
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+          <Text style={styles.link}>Hesabınız yok mu? Kayıt olun</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f7f8fa',
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    marginBottom: 24,
+    color: '#111827',
+  },
+  box: {
+    width: '85%',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+    alignItems: 'center',
+  },
+  input: {
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    fontSize: 16,
+    backgroundColor: '#f9fafb',
+  },
+  button: {
+    width: '100%',
+    backgroundColor: '#4F46E5',
+    padding: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  link: {
+    color: '#4F46E5',
+    marginTop: 8,
+    fontSize: 15,
+  },
+});
+
+export default LoginScreen; 
+-----------------------------------------
+REGİSTER_SCREEN
+
+import React, { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { ref, set } from 'firebase/database';
+import { auth, db } from '../firebaseConfig';
+
+const RegisterScreen = ({ navigation }: any) => {
+  const [name, setName] = useState('');
+  const [surname, setSurname] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleRegister = async () => {
+    if (!name || !surname || !email || !password) {
+      Alert.alert('Hata', 'Lütfen tüm alanları doldurun.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      await set(ref(db, 'users/' + user.uid), {
+        name,
+        surname,
+        email,
+      });
+      setLoading(false);
+      navigation.replace('Main');
+    } catch (error: any) {
+      setLoading(false);
+      Alert.alert('Kayıt Hatası', error.message);
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>Kayıt Ol</Text>
+      <View style={styles.box}>
+        <TextInput
+          style={styles.input}
+          placeholder="Ad"
+          value={name}
+          onChangeText={setName}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Soyad"
+          value={surname}
+          onChangeText={setSurname}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="E-posta"
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Şifre"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+        />
+        <TouchableOpacity style={styles.button} onPress={handleRegister} disabled={loading}>
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Kayıt Ol</Text>}
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.navigate('Login')}>
+          <Text style={styles.link}>Zaten hesabınız var mı? Giriş yapın</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f7f8fa',
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    marginBottom: 24,
+    color: '#111827',
+  },
+  box: {
+    width: '85%',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+    alignItems: 'center',
+  },
+  input: {
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    fontSize: 16,
+    backgroundColor: '#f9fafb',
+  },
+  button: {
+    width: '100%',
+    backgroundColor: '#4F46E5',
+    padding: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  link: {
+    color: '#4F46E5',
+    marginTop: 8,
+    fontSize: 15,
+  },
+});
+
+export default RegisterScreen; 
+
+------------------------------------
+APP.TSX
+/**
+ * Sample React Native App
+ * https://github.com/facebook/react-native
+ *
+ * @format
+ */
+
+import * as React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+
+import LoginScreen from './screens/LoginScreen';
+import RegisterScreen from './screens/RegisterScreen';
+import HomeScreen from './screens/HomeScreen';
+import PoetsScreen from './screens/PoetsScreen';
+import WritePoemScreen from './screens/WritePoemScreen';
+import ProfileScreen from './screens/ProfileScreen';
+
+const Stack = createNativeStackNavigator();
+const Tab = createBottomTabNavigator();
+
+function MainTabs() {
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        tabBarIcon: ({ color, size }) => {
+          let iconName = '';
+          if (route.name === 'Home') iconName = 'home';
+          else if (route.name === 'Poets') iconName = 'book-open-page-variant';
+          else if (route.name === 'Write') iconName = 'pencil';
+          else if (route.name === 'Profile') iconName = 'account-circle';
+          return <Icon name={iconName} size={size} color={color} />;
+        },
+        tabBarActiveTintColor: '#4F46E5',
+        tabBarInactiveTintColor: 'gray',
+        headerShown: false,
+      })}
+    >
+      <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'Şiirler' }} />
+      <Tab.Screen name="Poets" component={PoetsScreen} options={{ title: 'Şairler' }} />
+      <Tab.Screen name="Write" component={WritePoemScreen} options={{ title: 'Şiir Yaz' }} />
+      <Tab.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profil' }} />
+    </Tab.Navigator>
+  );
+}
+
+export default function App() {
+  return (
+    <NavigationContainer>
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="Login" component={LoginScreen} />
+        <Stack.Screen name="Register" component={RegisterScreen} />
+        <Stack.Screen name="Main" component={MainTabs} />
+      </Stack.Navigator>
+    </NavigationContainer>
+  );
+}
+
+----------
